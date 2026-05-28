@@ -33,3 +33,6 @@ outputs/
 
 # Logs
 *.log
+
+# Archives
+*.zip
