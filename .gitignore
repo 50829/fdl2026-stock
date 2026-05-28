@@ -1,9 +1,4 @@
-data/raw/
-data/processed/*
-!data/processed/.gitkeep
-!data/processed/README.md
-
-documents-export-*/
+data/
 
 outputs/*
 !outputs/.gitkeep
@@ -14,9 +9,8 @@ outputs/*
 !outputs/figures/
 !outputs/figures/.gitkeep
 
-logs/*
-!logs/.gitkeep
 
+!**/.gitkeep
 !**/*.md
 
 *.zip
