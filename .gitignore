@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+.DS_Store
+Thumbs.db
+
+.venv/
+venv/
+env/
+ENV/
+
+.idea/
+.vscode/
+
+# Data (large / raw)
+documents-export-*/
+data/
+**/*.csv
+**/*.parquet
+**/*.feather
+**/*.pkl
+**/*.pickle
+
+# Outputs / checkpoints
+outputs/
+**/*.pt
+**/*.pth
+**/*.ckpt
+**/*.onnx
+
+# Logs
+*.log

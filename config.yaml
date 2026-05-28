@@ -1,0 +1,67 @@
+seed: 42
+
+data:
+  daily_dir: documents-export-2026-5-18/daily
+  start_date: "2016-01-04"
+  end_date: "2025-12-31"
+  limit_files: null
+  usecols:
+    - ts_code
+    - trade_date
+    - open
+    - high
+    - low
+    - close
+    - pre_close
+    - vol
+    - amount
+    - vwap
+  extra_daily_dirs: []
+  extra_feature_cols: []
+  pool:
+    basic_csv: documents-export-2026-5-18/basic.csv
+    stock_st_dir: documents-export-2026-5-18/stock_st
+    exclude_bj: true
+    exclude_st: true
+
+split:
+  train_end: "2024-12-31"
+  val_end: "2025-12-31"
+
+task:
+  horizon: 1
+
+model:
+  seq_len: 30
+  hidden: 64
+  dropout: 0.0
+  normalize: window
+
+train:
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0
+  epochs: 1
+  use_tqdm: true
+  grad_clip: 0.0
+  shuffle: true
+  num_workers: 0
+  save_path: outputs/ckpt.pt
+
+eval:
+  ckpt: outputs/ckpt.pt
+  batch_size: 512
+  num_workers: 0
+  pred_path: null
+
+backtest:
+  enabled: true
+  strategy:
+    name: topk_rotate
+    params:
+      n_hold: 20
+      k_rotate: 5
+      transaction_cost_bps: 0.0
+      trading_days_per_year: 252
+  curve_path: outputs/bt_curve.csv
+
