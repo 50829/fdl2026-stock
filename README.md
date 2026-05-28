@@ -36,10 +36,20 @@ docs/report/        # 实验报告与插图
 
 先跑通最小闭环：`raw csv -> processed parquet -> features/labels -> baseline model -> IC/backtest -> daily prediction`。
 
+## 环境安装
+
+使用 python 3.12 和 cuda 13.0
+
+```bash
+conda create -n fdl python=3.12
+conda activate fdl
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+```
+
 ## 数据预处理
 
 ```bash
-/home/mirawind/miniforge3/bin/conda run -n fdl python -m src.data.preprocess --config configs/config.yaml
+conda run -n fdl python -m src.data.preprocess --config configs/config.yaml
 ```
 
 处理方案见 `docs/dev/data_preprocessing.md`，产物说明见 `data/processed/README.md`。
