@@ -1,0 +1,1 @@
+"""Daily prediction entry point."""

@@ -1,0 +1,11 @@
+python  = 3.12
+
+
+pandas
+numpy
+pyarrow
+scikit-learn
+torch
+tqdm
+pyyaml
+matplotlib
