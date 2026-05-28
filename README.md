@@ -17,6 +17,8 @@ data/processed/     # 预处理产物，不提交
 src/data/           # 数据读取、特征、标签、Dataset
 src/models/         # 模型定义
 src/backtest/       # 指标、策略、回测
+tests/smoke_pipeline/ # 跑通流程用的临时 smoke pipeline
+tests/configs/      # smoke pipeline 配置
 notebooks/          # 探索分析
 outputs/            # 模型、预测、图表产出，不提交
 logs/               # 训练日志，不提交
@@ -41,3 +43,12 @@ docs/report/        # 实验报告与插图
 ```
 
 处理方案见 `docs/dev/data_preprocessing.md`，产物说明见 `data/processed/README.md`。
+
+## Smoke 流程测试
+
+远端合入的流程测试代码已收在 `tests/smoke_pipeline/`，避免和主线 `src/` 模块重名冲突。
+
+```bash
+python tests/smoke_pipeline/train.py --config tests/configs/smoke.yaml
+python tests/smoke_pipeline/eval.py --config tests/configs/smoke.yaml
+```

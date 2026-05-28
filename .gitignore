@@ -1,5 +1,9 @@
 data/raw/
 data/processed/*
+!data/processed/.gitkeep
+!data/processed/README.md
+
+documents-export-*/
 
 outputs/*
 !outputs/.gitkeep
@@ -19,5 +23,20 @@ logs/*
 *.pt
 *.pth
 *.ckpt
+*.onnx
+*.py[cod]
 __pycache__/
+.pytest_cache/
+.mypy_cache/
 .ipynb_checkpoints/
+
+.DS_Store
+Thumbs.db
+
+.venv/
+venv/
+env/
+ENV/
+
+.idea/
+.vscode/
