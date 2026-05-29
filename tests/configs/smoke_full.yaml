@@ -53,6 +53,9 @@ eval:
   batch_size: 512
   num_workers: 0
   pred_path: null
+  add_ic_to_pred: false
+  ic_by_day_path: outputs/smoke/ic_by_day_full.csv
+  metrics_path: outputs/smoke/eval_metrics_full.csv
 
 backtest:
   enabled: true

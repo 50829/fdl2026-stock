@@ -41,6 +41,19 @@ def ic_by_day(preds: np.ndarray, labels: np.ndarray, codes: list[str], dates: li
     return np.asarray(ics, dtype=np.float32)
 
 
+def ic_by_day_table(preds: np.ndarray, labels: np.ndarray, codes: list[str], dates: list[str]) -> pd.DataFrame:
+    df = pd.DataFrame({"pred": preds, "label": labels, "ts_code": codes, "trade_date": dates})
+    rows = []
+    for d, g in df.groupby("trade_date", sort=True):
+        g = g.dropna(subset=["pred", "label"])
+        n = int(len(g))
+        if n < 3:
+            continue
+        ic = _spearman_corr(g["pred"].to_numpy(), g["label"].to_numpy())
+        rows.append({"trade_date": str(d), "ic": float(ic), "n": n})
+    return pd.DataFrame(rows)
+
+
 def _load_data(cfg: dict) -> pd.DataFrame:
     data_cfg = cfg.get("data", {})
     panel_csv = data_cfg.get("panel_csv")
@@ -137,7 +150,11 @@ def evaluate(cfg: dict):
             dates.extend(list(db))
     mse = loss_sum / max(1, n)
 
-    ics = ic_by_day(np.asarray(preds), np.asarray(labels), codes, dates)
+    preds_arr = np.asarray(preds)
+    labels_arr = np.asarray(labels)
+
+    ic_table = ic_by_day_table(preds_arr, labels_arr, codes, dates)
+    ics = ic_table["ic"].to_numpy(dtype=np.float32, copy=True) if not ic_table.empty else np.asarray([], dtype=np.float32)
     ic_mean = float(np.nanmean(ics)) if len(ics) else float("nan")
     ic_std = float(np.nanstd(ics)) if len(ics) else float("nan")
     icir = ic_mean / (ic_std + 1e-12) if np.isfinite(ic_mean) and np.isfinite(ic_std) else float("nan")
@@ -145,19 +162,32 @@ def evaluate(cfg: dict):
     out = {"val_mse": mse, "ic_mean": ic_mean, "icir": icir, "ic_days": int(len(ics)), "samples": int(len(ds))}
     print(json.dumps(out, ensure_ascii=False))
 
+    ic_by_day_path = eval_cfg.get("ic_by_day_path")
+    if ic_by_day_path:
+        Path(ic_by_day_path).parent.mkdir(parents=True, exist_ok=True)
+        ic_table.to_csv(ic_by_day_path, index=False)
+        print(json.dumps({"saved_ic_by_day": str(ic_by_day_path)}, ensure_ascii=False))
+
     pred_path = eval_cfg.get("pred_path")
     if pred_path:
         pred_df = pd.DataFrame({"ts_code": codes, "trade_date": dates, "pred": preds, "label": labels})
+
+        if bool(eval_cfg.get("add_ic_to_pred", False)) and not ic_table.empty:
+            ic_map = dict(zip(ic_table["trade_date"].astype(str).tolist(), ic_table["ic"].astype(float).tolist()))
+            pred_df["ic_day"] = pred_df["trade_date"].astype(str).map(ic_map)
+
         Path(pred_path).parent.mkdir(parents=True, exist_ok=True)
         pred_df.to_csv(pred_path, index=False)
         print(json.dumps({"saved_pred": str(pred_path)}, ensure_ascii=False))
 
     bt_cfg = cfg.get("backtest", {})
+    bt_metrics = None
     if bool(bt_cfg.get("enabled", False)):
         pred_df = pd.DataFrame({"ts_code": codes, "trade_date": dates, "pred": preds, "label": labels})
         horizon = int(cfg.get("task", {}).get("horizon", 1))
         strategy = build_strategy(cfg)
         res = strategy(pred_df, horizon)
+        bt_metrics = res.metrics
         print(json.dumps({"backtest": res.metrics}, ensure_ascii=False))
 
         curve_path = bt_cfg.get("curve_path")
@@ -165,6 +195,16 @@ def evaluate(cfg: dict):
             Path(curve_path).parent.mkdir(parents=True, exist_ok=True)
             res.equity_curve.to_csv(curve_path, index=False)
             print(json.dumps({"saved_curve": str(curve_path)}, ensure_ascii=False))
+
+    metrics_path = eval_cfg.get("metrics_path")
+    if metrics_path:
+        merged = dict(out)
+        if bt_metrics:
+            for k, v in bt_metrics.items():
+                merged[f"bt_{k}"] = v
+        Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([merged]).to_csv(metrics_path, index=False)
+        print(json.dumps({"saved_metrics": str(metrics_path)}, ensure_ascii=False))
 
 
 def main():

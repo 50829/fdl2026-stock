@@ -8,6 +8,10 @@
 pip install -r requirements.txt
 ```
 
+```bash
+pip install -r requirements.txt
+```
+
 ## 目录结构
 
 ```text
@@ -62,3 +66,16 @@ conda run -n fdl python -m src.data.preprocess --config configs/config.yaml
 python tests/smoke_pipeline/train.py --config tests/configs/smoke.yaml
 python tests/smoke_pipeline/eval.py --config tests/configs/smoke.yaml
 ```
+
+Smoke pipeline 会把产物输出到 `outputs/smoke/`（默认）：
+
+- `ckpt.pt`：checkpoint
+- `val_pred.csv`：逐样本预测与标签（可选）
+- `ic_by_day.csv`：逐日 IC 表（可选）
+- `eval_metrics.csv`：评估/回测汇总（可选）
+- `bt_curve.csv`：回测资金曲线（可选）
+
+`eval.py` 终端输出也会打印：
+
+- `val_mse/ic_mean/icir/ic_days/samples`
+- 回测开启时打印 `{"backtest": {...}}`
