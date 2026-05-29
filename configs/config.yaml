@@ -17,3 +17,22 @@ train:
   batch_size: 256
   epochs: 20
   learning_rate: 0.001
+  weight_decay: 0.0
+  grad_clip: 0.0
+  filter_in_universe: true
+  use_tqdm: true
+  save_path: outputs/models/ckpt.pt
+
+task:
+  label: label_1d
+
+model:
+  name: mlp
+  hidden: 256
+  dropout: 0.0
+
+predict:
+  ckpt: outputs/models/ckpt.pt
+  split: test
+  batch_size: 4096
+  use_tqdm: true

@@ -8,10 +8,6 @@
 pip install -r requirements.txt
 ```
 
-```bash
-pip install -r requirements.txt
-```
-
 ## 目录结构
 
 ```text
@@ -57,6 +53,26 @@ conda run -n fdl python -m src.data.preprocess --config configs/config.yaml
 ```
 
 处理方案见 `docs/dev/data_preprocessing.md`，产物说明见 `data/processed/README.md`。
+
+## 主线训练与预测（使用 data/processed）
+
+训练：
+
+```bash
+python -m src.train --config configs/config.yaml
+```
+
+预测（默认跑 test split 并输出到 `outputs/predictions/`）：
+
+```bash
+python -m src.predict --config configs/config.yaml
+```
+
+`src.train`/`src.predict` 默认读取：
+
+- `data/processed/feature_meta.json` 获取特征列
+- `data/processed/splits.json` 获取 train/valid/test 日期切分
+- `data/processed/features.parquet`、`labels.parquet`、`universe.parquet` 作为输入
 
 ## Smoke 流程测试
 
