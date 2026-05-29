@@ -3,14 +3,21 @@ data:
   processed_dir: data/processed
 
 sample:
-  start_date: "20190101"
+  start_date: "20160101"
   train_end: "20231231"
   valid_end: "20241231"
   lookback: 60
-  horizon: 1
+  horizon: 5
 
 universe:
   min_list_days: 60
+  liquidity_filter:
+    enabled: true
+    window: 20
+    bottom_pct: 0.2
+
+features:
+  robust_z_clip: 3.0
 
 train:
   seed: 2026

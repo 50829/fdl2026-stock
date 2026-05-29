@@ -1,25 +1,75 @@
-"""Feature engineering utilities."""
+"""Feature engineering utilities used by the preprocessing pipeline."""
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 
-BASE_FEATURES = [
+ROLLING_WINDOWS = [5, 10, 20, 60]
+
+CROSS_SECTION_BASE_COLUMNS = [
     "ret_1",
     "open_gap",
     "intraday_ret",
     "high_low_range",
     "close_vwap_gap",
+    "close_position",
     "log_vol",
     "log_amount",
+    "turnover_rate",
+    "pb",
+    "ps_ttm",
+    "log_total_mv",
+    "log_circ_mv",
+    "net_mf_amount_ratio",
+    "large_net_amount_ratio",
+    "buy_lg_amount_ratio",
+    "buy_elg_amount_ratio",
+    "rsi_6",
+    "rsi_14",
+    "rsi_24",
+    "kdj_k",
+    "kdj_d",
+    "kdj_j",
+    "macd_dif",
+    "macd_dea",
+    "macd_hist",
+    "corr_ret_logvol_chg_10",
+    "corr_ret_logvol_chg_20",
+    "ret_x_volume_ratio_10",
+    "ret_x_volume_ratio_20",
+    "turnover_shock_20",
+    "industry_momentum_20",
+    "stock_minus_industry_mom_20",
 ]
 
-ROLLING_WINDOWS = [5, 10, 20, 60]
+ROLLING_CROSS_SECTION_PATTERNS = [
+    "momentum_{window}",
+    "volatility_{window}",
+    "ma_gap_{window}",
+    "volume_ratio_{window}",
+    "turnover_mean_{window}",
+    "moneyflow_ratio_{window}",
+]
+
+TS_ZSCORE_COLUMNS = ["ret_1", "momentum_5", "momentum_20", "volatility_20", "volume_ratio_20"]
+ROBUST_Z_COLUMNS = ["ret_1", "momentum_20", "volatility_20", "log_total_mv"]
+DIRECT_FEATURE_COLUMNS = ["pe_ttm_missing", "dv_ttm_missing", "stock_rank_in_industry"]
+
+
+def existing_columns(df: pd.DataFrame, candidates: list[str]) -> list[str]:
+    """Return candidate columns that exist in the dataframe, preserving order."""
+    return [col for col in candidates if col in df.columns]
+
+
+def cross_section_source_columns(df: pd.DataFrame, windows: list[int] | None = None) -> list[str]:
+    """Return raw columns that should get date-wise cross-section rank features."""
+    windows = windows or ROLLING_WINDOWS
+    candidates = list(CROSS_SECTION_BASE_COLUMNS)
+    for window in windows:
+        candidates.extend(pattern.format(window=window) for pattern in ROLLING_CROSS_SECTION_PATTERNS)
+    return existing_columns(df, candidates)
 
 
 def add_basic_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -30,6 +80,8 @@ def add_basic_features(df: pd.DataFrame) -> pd.DataFrame:
     out["intraday_ret"] = out["close"] / out["open"] - 1
     out["high_low_range"] = out["high"] / out["low"] - 1
     out["close_vwap_gap"] = out["close"] / out["vwap"] - 1
+    high_low = (out["high"] - out["low"]).replace(0, np.nan)
+    out["close_position"] = (out["close"] - out["low"]) / high_low
     out["log_vol"] = np.log1p(out["vol"])
     out["log_amount"] = np.log1p(out["amount"])
     return out
@@ -157,6 +209,22 @@ def add_volume_price_interaction_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def add_industry_relative_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add industry-relative features computed inside the tradable universe."""
+    out = df.copy()
+    if "industry" not in out.columns or "momentum_20" not in out.columns:
+        return out
+
+    industry_keys = [out["trade_date"], out["industry"].fillna("UNKNOWN")]
+    industry_mom = out["momentum_20"].groupby(industry_keys).transform("mean")
+    out["industry_momentum_20"] = industry_mom
+    out["stock_minus_industry_mom_20"] = out["momentum_20"] - industry_mom
+
+    rank = out["momentum_20"].groupby(industry_keys).rank(pct=True)
+    out["stock_rank_in_industry"] = rank * 2 - 1
+    return out
+
+
 def cross_section_rank(
     df: pd.DataFrame,
     columns: list[str],
@@ -192,6 +260,35 @@ def cross_section_rank(
     return out, meta
 
 
+def cross_section_robust_z(
+    df: pd.DataFrame,
+    columns: list[str],
+    clip: float = 3.0,
+) -> tuple[pd.DataFrame, dict[str, dict[str, float | str]]]:
+    """Add date-wise robust z-score features based on median and MAD."""
+    out = df[["trade_date", "ts_code"]].copy()
+    meta: dict[str, dict[str, float | str]] = {}
+
+    for col in columns:
+        values = df[col].replace([np.inf, -np.inf], np.nan)
+        grouped = values.groupby(df["trade_date"])
+        median = grouped.transform("median")
+        abs_dev = (values - median).abs()
+        mad = abs_dev.groupby(df["trade_date"]).transform("median")
+        denom = 1.4826 * mad.replace(0, np.nan)
+        z = ((values - median) / denom).clip(-clip, clip).fillna(0)
+
+        feature_col = f"{col}__cs_robust_z"
+        out[feature_col] = z.astype("float32")
+        meta[feature_col] = {
+            "source_column": col,
+            "processor": "cross_section_robust_z",
+            "clip": float(clip),
+            "missing_rate": float(values.isna().mean()),
+        }
+    return out, meta
+
+
 def rolling_zscore(df: pd.DataFrame, columns: list[str], window: int = 60) -> tuple[pd.DataFrame, dict[str, dict[str, float | str]]]:
     """Add per-stock rolling z-score features."""
     out = df[["trade_date", "ts_code"]].copy()
@@ -214,23 +311,3 @@ def rolling_zscore(df: pd.DataFrame, columns: list[str], window: int = 60) -> tu
         }
     return out, meta
 
-
-def write_feature_meta(
-    path: Path,
-    feature_columns: list[str],
-    meta: dict,
-    config: dict,
-    all_feature_columns: list[str] | None = None,
-    feature_groups: dict[str, list[str]] | None = None,
-    default_feature_groups: list[str] | None = None,
-) -> None:
-    payload = {
-        "feature_columns": feature_columns,
-        "default_feature_columns": feature_columns,
-        "all_feature_columns": all_feature_columns or feature_columns,
-        "feature_groups": feature_groups or {},
-        "default_feature_groups": default_feature_groups or [],
-        "features": meta,
-        "config": config,
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
