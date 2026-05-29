@@ -14,7 +14,7 @@ pip install -r requirements.txt
 configs/            # 统一配置
 data/raw/           # 原始数据，不提交
 data/processed/     # 预处理产物，不提交
-src/data/           # 数据读取、特征、标签、Dataset
+src/data/           # 数据读取、特征、标签、元数据校验
 src/models/         # 模型定义
 src/backtest/       # 指标、策略、回测
 tests/smoke_pipeline/ # 跑通流程用的临时 smoke pipeline
@@ -28,7 +28,7 @@ docs/report/        # 实验报告与插图
 
 ## 小组分工
 
-- A：数据预处理、特征工程、标签构造、Dataset
+- A：数据预处理、特征工程、标签构造、元数据校验
 - B：模型实现、训练流程、每日预测
 - C：指标评估、历史回测、结果可视化
 

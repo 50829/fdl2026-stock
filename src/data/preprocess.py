@@ -17,17 +17,24 @@ import yaml
 from tqdm import tqdm
 
 from src.data.features import (
+    DIRECT_FEATURE_COLUMNS,
+    ROBUST_Z_COLUMNS,
+    TS_ZSCORE_COLUMNS,
+    add_industry_relative_features,
     add_basic_features,
     add_fundamental_features,
     add_moneyflow_features,
     add_rolling_features,
     add_technical_indicators,
     add_volume_price_interaction_features,
+    cross_section_robust_z,
     cross_section_rank,
+    cross_section_source_columns,
+    existing_columns,
     rolling_zscore,
-    write_feature_meta,
 )
-from src.data.label import add_cross_section_label_rank, add_forward_return_labels
+from src.data.feature_meta import build_feature_groups, write_feature_meta
+from src.data.label import add_cross_section_label_rank, add_forward_return_labels, add_market_excess_labels
 from src.data.load import downcast_numeric, list_date_files, read_csv
 
 
@@ -101,10 +108,22 @@ def load_st_rows(raw_dir: Path, start_date: str, end_date: str | None = None) ->
     return out
 
 
-def build_universe(panel: pd.DataFrame, raw_dir: Path, min_list_days: int, start_date: str, end_date: str | None) -> pd.DataFrame:
+def load_basic_metadata(raw_dir: Path) -> pd.DataFrame:
     basic = read_csv(raw_dir / "basic.csv")
     basic["list_date"] = basic["list_date"].astype(str)
-    basic = basic[["ts_code", "market", "list_date"]]
+    keep_cols = [col for col in ["ts_code", "market", "industry", "list_date"] if col in basic.columns]
+    return basic[keep_cols]
+
+
+def build_universe(
+    panel: pd.DataFrame,
+    raw_dir: Path,
+    min_list_days: int,
+    start_date: str,
+    end_date: str | None,
+    config: dict,
+) -> pd.DataFrame:
+    basic = load_basic_metadata(raw_dir)
 
     universe = panel[["trade_date", "ts_code", "vol", "amount"]].copy()
     universe = universe.merge(basic, on="ts_code", how="left")
@@ -113,153 +132,136 @@ def build_universe(panel: pd.DataFrame, raw_dir: Path, min_list_days: int, start
     universe = universe.merge(st, on=["trade_date", "ts_code"], how="left")
     universe["is_st"] = universe["is_st"].fillna(False)
 
-    listed_days = universe.sort_values(["ts_code", "trade_date"]).groupby("ts_code").cumcount() + 1
+    trade_dt = pd.to_datetime(universe["trade_date"], format="%Y%m%d", errors="coerce")
+    list_dt = pd.to_datetime(universe["list_date"], format="%Y%m%d", errors="coerce")
+    listed_days = (trade_dt - list_dt).dt.days + 1
+    listed_days = listed_days.where(listed_days > 0, 0).fillna(0)
     universe["listed_days_in_data"] = listed_days.astype("int32")
-    universe["in_universe"] = (
+
+    liquidity_cfg = config.get("universe", {}).get("liquidity_filter", {}) or {}
+    liquidity_window = int(liquidity_cfg.get("window", 20))
+    liquidity_min_periods = min(5, liquidity_window)
+    sorted_universe = universe.sort_values(["ts_code", "trade_date"])
+    universe["amount_mean_20"] = sorted_universe.groupby("ts_code")["amount"].transform(
+        lambda s: s.rolling(liquidity_window, min_periods=liquidity_min_periods).mean()
+    ).reindex(universe.index)
+
+    base_mask = (
         universe["market"].ne("北交所")
         & ~universe["is_st"]
         & universe["vol"].gt(0)
         & universe["amount"].gt(0)
         & universe["listed_days_in_data"].ge(min_list_days)
     )
-    return universe[["trade_date", "ts_code", "in_universe", "is_st", "market", "listed_days_in_data"]]
+
+    liquidity_enabled = bool(liquidity_cfg.get("enabled", True))
+    bottom_pct = float(liquidity_cfg.get("bottom_pct", 0.2))
+    if liquidity_enabled and bottom_pct > 0:
+        amount_mean = universe["amount_mean_20"].where(base_mask)
+        liquidity_rank = amount_mean.groupby(universe["trade_date"]).rank(pct=True)
+        liquidity_mask = liquidity_rank.gt(bottom_pct).fillna(False)
+    else:
+        liquidity_mask = pd.Series(True, index=universe.index)
+
+    universe["passes_liquidity"] = liquidity_mask.astype(bool)
+    universe["in_universe"] = base_mask & universe["passes_liquidity"]
+    return universe[
+        [
+            "trade_date",
+            "ts_code",
+            "in_universe",
+            "is_st",
+            "market",
+            "industry",
+            "listed_days_in_data",
+            "amount_mean_20",
+            "passes_liquidity",
+        ]
+    ]
 
 
-def build_features(panel: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict]:
+def build_raw_features(panel: pd.DataFrame) -> pd.DataFrame:
     df = add_basic_features(panel)
     df = add_moneyflow_features(df)
     df = add_fundamental_features(df)
     df = add_rolling_features(df)
     df = add_technical_indicators(df)
-    df = add_volume_price_interaction_features(df)
+    return add_volume_price_interaction_features(df)
 
-    cs_candidates = [
-        "ret_1",
-        "open_gap",
-        "intraday_ret",
-        "high_low_range",
-        "close_vwap_gap",
-        "log_vol",
-        "log_amount",
-        "turnover_rate",
-        "pb",
-        "ps_ttm",
-        "log_total_mv",
-        "log_circ_mv",
-        "net_mf_amount_ratio",
-        "large_net_amount_ratio",
-        "buy_lg_amount_ratio",
-        "buy_elg_amount_ratio",
-        "rsi_6",
-        "rsi_14",
-        "rsi_24",
-        "kdj_k",
-        "kdj_d",
-        "kdj_j",
-        "macd_dif",
-        "macd_dea",
-        "macd_hist",
-        "corr_ret_logvol_chg_10",
-        "corr_ret_logvol_chg_20",
-        "ret_x_volume_ratio_10",
-        "ret_x_volume_ratio_20",
-        "turnover_shock_20",
-    ]
-    for window in [5, 10, 20, 60]:
-        cs_candidates.extend(
-            [
-                f"momentum_{window}",
-                f"volatility_{window}",
-                f"ma_gap_{window}",
-                f"volume_ratio_{window}",
-                f"turnover_mean_{window}",
-                f"moneyflow_ratio_{window}",
-            ]
-        )
-    cs_columns = [col for col in cs_candidates if col in df.columns]
 
-    ts_columns = [col for col in ["ret_1", "momentum_5", "momentum_20", "volatility_20", "volume_ratio_20"] if col in df.columns]
+def build_features(panel: pd.DataFrame, universe: pd.DataFrame, config: dict) -> tuple[pd.DataFrame, dict]:
+    df = build_raw_features(panel)
+    df = df.merge(
+        universe[["trade_date", "ts_code", "in_universe", "industry"]],
+        on=["trade_date", "ts_code"],
+        how="left",
+    )
+    df = df[df["in_universe"].fillna(False)].drop(columns=["in_universe"]).copy()
+    df = add_industry_relative_features(df)
+
+    cs_columns = cross_section_source_columns(df)
+    ts_columns = existing_columns(df, TS_ZSCORE_COLUMNS)
+    robust_columns = existing_columns(df, ROBUST_Z_COLUMNS)
 
     cs_features, cs_meta = cross_section_rank(df, cs_columns)
     ts_features, ts_meta = rolling_zscore(df, ts_columns, window=int(config["sample"].get("lookback", 60)))
+    robust_features, robust_meta = cross_section_robust_z(
+        df,
+        robust_columns,
+        clip=float(config.get("features", {}).get("robust_z_clip", 3.0)),
+    )
 
     features = cs_features.merge(ts_features, on=["trade_date", "ts_code"], how="left")
-    meta = {**cs_meta, **ts_meta}
-    for col in ["pe_ttm_missing", "dv_ttm_missing"]:
-        if col in df.columns:
-            features[col] = df[col].fillna(1).astype("int8")
-            meta[col] = {"source_column": col, "processor": "binary_mask", "missing_rate": 0.0}
+    features = features.merge(robust_features, on=["trade_date", "ts_code"], how="left")
+    meta = {**cs_meta, **ts_meta, **robust_meta}
+    direct_feature_frames = []
+    for col in existing_columns(df, DIRECT_FEATURE_COLUMNS):
+        direct = df[["trade_date", "ts_code"]].copy()
+        is_industry_rank = col == "stock_rank_in_industry"
+        direct[col] = (
+            df[col]
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0 if is_industry_rank else 1)
+            .astype("float32" if is_industry_rank else "int8")
+        )
+        direct_feature_frames.append(direct)
+        meta[col] = {
+            "source_column": "momentum_20" if is_industry_rank else col,
+            "processor": "industry_rank" if is_industry_rank else "binary_mask",
+            "missing_rate": float(df[col].isna().mean()),
+        }
+    for direct in direct_feature_frames:
+        features = features.merge(direct, on=["trade_date", "ts_code"], how="left")
 
     feature_cols = [col for col in features.columns if col not in {"trade_date", "ts_code"}]
     features[feature_cols] = features[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
     return downcast_numeric(features), meta
 
 
-def build_feature_groups(feature_columns: list[str]) -> tuple[dict[str, list[str]], list[str], list[str]]:
-    """Group feature columns for ablation experiments."""
-    groups = {
-        "core_price": [
-            col for col in feature_columns
-            if col.startswith(("ret_1__", "open_gap__", "intraday_ret__", "high_low_range__", "close_vwap_gap__"))
-        ],
-        "volume_liquidity": [
-            col for col in feature_columns
-            if col.startswith(("log_vol__", "log_amount__", "volume_ratio_", "turnover_rate__", "turnover_mean_"))
-        ],
-        "momentum_ma": [
-            col for col in feature_columns
-            if col.startswith(("momentum_", "ma_gap_"))
-        ],
-        "volatility": [
-            col for col in feature_columns
-            if col.startswith("volatility_")
-        ],
-        "moneyflow": [
-            col for col in feature_columns
-            if col.startswith(("net_mf_", "large_net_", "buy_lg_", "buy_elg_", "moneyflow_ratio_"))
-        ],
-        "fundamental_size": [
-            col for col in feature_columns
-            if col.startswith(("pb__", "ps_ttm__", "log_total_mv__", "log_circ_mv__", "pe_ttm", "dv_ttm"))
-        ],
-        "ts_zscore": [
-            col for col in feature_columns
-            if "__ts_z" in col
-        ],
-        "oscillator": [
-            col for col in feature_columns
-            if col.startswith(("rsi_", "kdj_"))
-        ],
-        "macd": [
-            col for col in feature_columns
-            if col.startswith("macd_")
-        ],
-        "volume_price_interaction": [
-            col for col in feature_columns
-            if col.startswith(("corr_ret_logvol_chg_", "ret_x_volume_ratio_", "turnover_shock_"))
-        ],
-    }
-    groups = {name: cols for name, cols in groups.items() if cols}
-    default_groups = [
-        "core_price",
-        "volume_liquidity",
-        "momentum_ma",
-        "volatility",
-        "moneyflow",
-        "fundamental_size",
-        "ts_zscore",
-        "oscillator",
-        "volume_price_interaction",
-    ]
-    default_columns = []
-    for group in default_groups:
-        default_columns.extend(groups.get(group, []))
-    default_columns = list(dict.fromkeys(default_columns))
-    return groups, default_groups, default_columns
+def filter_labels_to_universe(labels: pd.DataFrame, universe: pd.DataFrame, horizons: list[int]) -> pd.DataFrame:
+    """Keep labels whose decision, buy, and sell dates are inside the tradable universe."""
+    out = labels.copy()
+    date_universe = universe[["trade_date", "ts_code", "in_universe"]].copy()
+    out = out.merge(date_universe, on=["trade_date", "ts_code"], how="left")
+    mask = out["in_universe"].fillna(False).to_numpy(dtype=bool)
+    out = out.drop(columns=["in_universe"])
+
+    buy_universe = date_universe.rename(columns={"trade_date": "buy_date", "in_universe": "buy_in_universe"})
+    out = out.merge(buy_universe, on=["buy_date", "ts_code"], how="left")
+    mask = mask & out["buy_in_universe"].fillna(False).to_numpy(dtype=bool)
+    out = out.drop(columns=["buy_in_universe"])
+
+    for horizon in horizons:
+        sell_col = f"sell_date_{horizon}d"
+        sell_flag = f"sell_in_universe_{horizon}d"
+        sell_universe = date_universe.rename(columns={"trade_date": sell_col, "in_universe": sell_flag})
+        out = out.merge(sell_universe, on=[sell_col, "ts_code"], how="left")
+        mask = mask & out[sell_flag].fillna(False).to_numpy(dtype=bool)
+        out = out.drop(columns=[sell_flag])
+    return out[mask].copy()
 
 
-def write_processed_readme(processed_dir: Path, report: dict, config: dict, feature_count: int, all_feature_count: int | None = None) -> None:
-    all_feature_count = all_feature_count or feature_count
+def write_processed_readme(processed_dir: Path, report: dict, config: dict, feature_count: int) -> None:
     text = f"""# Processed Data
 
 本目录由 `python -m src.data.preprocess --config configs/config.yaml` 生成。
@@ -271,8 +273,7 @@ def write_processed_readme(processed_dir: Path, report: dict, config: dict, feat
 - 交易日数量：`{report["n_trade_dates"]}`
 - 股票数量：`{report["n_stocks"]}`
 - 面板行数：`{report["rows"]}`
-- 默认特征数量：`{feature_count}`
-- 特征池总数量：`{all_feature_count}`
+- 特征数量：`{feature_count}`
 
 ## 文件说明
 
@@ -280,14 +281,16 @@ def write_processed_readme(processed_dir: Path, report: dict, config: dict, feat
 - `data_quality.json`：数据质量检查摘要。
 - `universe.parquet`：每日股票池过滤结果。
 - `features.parquet`：模型输入特征。
-- `labels.parquet`：`label_1d`、`label_5d` 及其截面 rank 标签。
-- `feature_meta.json`：默认特征列、完整特征池、特征分组、处理方式和生成配置。
+- `labels.parquet`：`label_1d`、`label_5d`、市场超额标签及其截面 rank 标签。
+- `feature_meta.json`：默认特征列、特征分组、处理方式和生成配置。
 - `splits.json`：训练、验证、测试时间切分。
 
 ## 关键约束
 
 - 特征只使用当日盘后及以前可获得的数据。
+- 截面标准化只在当日 `in_universe=True` 的可交易股票池内部计算。
 - 标签从 `T+1` 买入价开始计算，避免使用不可交易收益。
+- 标签使用全市场交易日历对齐，不按单只股票记录跳过停牌/缺失日期。
 - 训练、验证、测试按时间切分，禁止随机日期切分。
 """
     (processed_dir / "README.md").write_text(text, encoding="utf-8")
@@ -322,37 +325,40 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    universe = build_universe(panel, raw_dir, min_list_days, start_date, end_date)
+    universe = build_universe(panel, raw_dir, min_list_days, start_date, end_date, config)
     universe.to_parquet(processed_dir / "universe.parquet", index=False)
 
-    features, feature_meta = build_features(panel, config)
-    features = features.merge(universe[["trade_date", "ts_code", "in_universe"]], on=["trade_date", "ts_code"], how="left")
-    features = features[features["in_universe"].fillna(False)].drop(columns=["in_universe"])
+    features, feature_meta = build_features(panel, universe, config)
     features.to_parquet(processed_dir / "features.parquet", index=False)
 
-    labels = add_forward_return_labels(panel, horizons=[1, 5])
+    horizons = [1, 5]
+    trade_dates = sorted(panel["trade_date"].astype(str).unique().tolist())
+    labels = add_forward_return_labels(panel, horizons=horizons, trade_dates=trade_dates)
     labels = labels.dropna(subset=["label_1d", "label_5d"])
-    labels = add_cross_section_label_rank(labels, ["label_1d", "label_5d"])
-    labels = labels.merge(universe[["trade_date", "ts_code", "in_universe"]], on=["trade_date", "ts_code"], how="left")
-    labels = labels[labels["in_universe"].fillna(False)].drop(columns=["in_universe"])
+    labels = filter_labels_to_universe(labels, universe, horizons=horizons)
+    label_columns = ["label_1d", "label_5d"]
+    labels = add_market_excess_labels(labels, label_columns)
+    labels = add_cross_section_label_rank(labels, label_columns + ["label_1d_excess", "label_5d_excess"])
     labels.to_parquet(processed_dir / "labels.parquet", index=False)
 
-    all_feature_columns = [col for col in features.columns if col not in {"trade_date", "ts_code"}]
-    feature_groups, default_feature_groups, default_feature_columns = build_feature_groups(all_feature_columns)
+    feature_columns = [col for col in features.columns if col not in {"trade_date", "ts_code"}]
+    feature_groups = build_feature_groups(feature_columns)
     write_feature_meta(
         processed_dir / "feature_meta.json",
-        default_feature_columns,
+        feature_columns,
         feature_meta,
         {
             "config_path": args.config,
             "start_date": start_date,
             "end_date": end_date,
             "min_list_days": min_list_days,
+            "liquidity_filter": config.get("universe", {}).get("liquidity_filter", {}),
+            "label_horizons": horizons,
+            "label_calendar": "global_trade_dates",
+            "normalization_universe": "in_universe_only",
             "generated_at": datetime.now().isoformat(timespec="seconds"),
         },
-        all_feature_columns=all_feature_columns,
         feature_groups=feature_groups,
-        default_feature_groups=default_feature_groups,
     )
 
     splits = {
@@ -367,7 +373,7 @@ def main() -> None:
         ],
     }
     (processed_dir / "splits.json").write_text(json.dumps(splits, ensure_ascii=False, indent=2), encoding="utf-8")
-    write_processed_readme(processed_dir, quality, config, len(default_feature_columns), len(all_feature_columns))
+    write_processed_readme(processed_dir, quality, config, len(feature_columns))
 
 
 if __name__ == "__main__":
