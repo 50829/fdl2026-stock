@@ -12,7 +12,13 @@ import torch
 import yaml
 from torch import nn, optim
 
-from src.data import ProcessedConfig, build_processed_splits, iter_processed_batches, load_feature_columns
+from src.data import (
+    ProcessedConfig,
+    build_processed_splits,
+    iter_processed_batches,
+    iter_processed_sequence_batches,
+    load_feature_columns,
+)
 from src.models import build_model
 
 
@@ -71,8 +77,7 @@ def train(cfg: dict):
 
     model_cfg = cfg.get("model", {})
     model_name = str(model_cfg.get("name", "mlp")).strip().lower()
-    if model_name not in {"mlp", "dummy"}:
-        raise ValueError("processed features are tabular; set model.name to mlp/dummy for now")
+    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm"}
 
     in_dim = int(len(feature_cols))
     model = build_model(cfg, in_dim=in_dim)
@@ -90,23 +95,39 @@ def train(cfg: dict):
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     filter_in_universe = bool(train_cfg.get("filter_in_universe", True))
 
+    seq_len = int(model_cfg.get("seq_len", cfg.get("sample", {}).get("lookback", 60)))
+
     for epoch in range(1, epochs + 1):
         model.train()
         t0 = time.perf_counter()
         tr_loss_sum = 0.0
         tr_n = 0
 
-        train_iter = iter_processed_batches(
-            pcfg,
-            splits["train"],
-            feature_cols=feature_cols,
-            label_col=label_col,
-            batch_size=batch_size,
-            filter_in_universe=filter_in_universe,
-            return_keys=False,
-            use_tqdm=use_tqdm,
-            stage_desc="train_scan",
-        )
+        if is_sequence_model:
+            train_iter = iter_processed_sequence_batches(
+                pcfg,
+                splits["train"],
+                feature_cols=feature_cols,
+                label_col=label_col,
+                seq_len=seq_len,
+                batch_size=batch_size,
+                filter_in_universe=filter_in_universe,
+                return_keys=False,
+                use_tqdm=use_tqdm,
+                stage_desc="train_seq",
+            )
+        else:
+            train_iter = iter_processed_batches(
+                pcfg,
+                splits["train"],
+                feature_cols=feature_cols,
+                label_col=label_col,
+                batch_size=batch_size,
+                filter_in_universe=filter_in_universe,
+                return_keys=False,
+                use_tqdm=use_tqdm,
+                stage_desc="train_tab",
+            )
 
         for batch in train_iter:
             xb = torch.from_numpy(batch["X"]).to(device, non_blocking=True)
@@ -126,17 +147,31 @@ def train(cfg: dict):
         model.eval()
         va_loss_sum = 0.0
         va_n = 0
-        valid_iter = iter_processed_batches(
-            pcfg,
-            splits["valid"],
-            feature_cols=feature_cols,
-            label_col=label_col,
-            batch_size=batch_size,
-            filter_in_universe=filter_in_universe,
-            return_keys=False,
-            use_tqdm=use_tqdm,
-            stage_desc="valid_scan",
-        )
+        if is_sequence_model:
+            valid_iter = iter_processed_sequence_batches(
+                pcfg,
+                splits["valid"],
+                feature_cols=feature_cols,
+                label_col=label_col,
+                seq_len=seq_len,
+                batch_size=batch_size,
+                filter_in_universe=filter_in_universe,
+                return_keys=False,
+                use_tqdm=use_tqdm,
+                stage_desc="valid_seq",
+            )
+        else:
+            valid_iter = iter_processed_batches(
+                pcfg,
+                splits["valid"],
+                feature_cols=feature_cols,
+                label_col=label_col,
+                batch_size=batch_size,
+                filter_in_universe=filter_in_universe,
+                return_keys=False,
+                use_tqdm=use_tqdm,
+                stage_desc="valid_tab",
+            )
         with torch.no_grad():
             for batch in valid_iter:
                 xb = torch.from_numpy(batch["X"]).to(device, non_blocking=True)

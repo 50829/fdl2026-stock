@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from torch import nn
 
+from .lrk import ALSTM
 from .lstm import LSTMModel
 from .mlp import MLPModel
 from .transformer import TransformerModel
@@ -29,7 +30,27 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
         dropout = float(model_cfg.get("dropout", 0.0))
         return TransformerModel(in_dim=in_dim, d_model=d_model, nhead=nhead, num_layers=num_layers, dropout=dropout)
 
+    if name in {"alstm"}:
+        input_dim = int(model_cfg.get("input_dim", in_dim))
+        if input_dim != int(in_dim):
+            raise ValueError(f"input_dim mismatch: config={input_dim}, data={in_dim}")
+        hidden_size = int(model_cfg.get("hidden_size", 128))
+        num_layers = int(model_cfg.get("num_layers", 2))
+        rnn_type = str(model_cfg.get("rnn_type", "GRU"))
+        dropout = float(model_cfg.get("dropout", 0.2))
+        attention_hidden_ratio = float(model_cfg.get("attention_hidden_ratio", 0.5))
+        seq_len = int(model_cfg.get("seq_len", 60))
+        return ALSTM(
+            input_dim=input_dim,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            rnn_type=rnn_type,
+            dropout=dropout,
+            attention_hidden_ratio=attention_hidden_ratio,
+            seq_len=seq_len,
+        )
+
     raise ValueError(f"Unknown model name: {name}")
 
 
-__all__ = ["build_model", "MLPModel", "LSTMModel", "TransformerModel"]
+__all__ = ["build_model", "MLPModel", "LSTMModel", "TransformerModel", "ALSTM"]

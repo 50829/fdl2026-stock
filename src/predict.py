@@ -10,7 +10,13 @@ import numpy as np
 import torch
 import yaml
 
-from src.data import ProcessedConfig, ProcessedSplit, build_processed_splits, iter_processed_batches
+from src.data import (
+    ProcessedConfig,
+    ProcessedSplit,
+    build_processed_splits,
+    iter_processed_batches,
+    iter_processed_sequence_feature_batches,
+)
 from src.models import build_model
 
 
@@ -90,18 +96,39 @@ def predict(cfg: dict):
     )
     writer = pq.ParquetWriter(out_path, schema=schema)
 
-    split = ProcessedSplit(name="predict", start_date=start_date, end_date=end_date)
-    it = iter_processed_batches(
-        pcfg,
-        split,
-        feature_cols=feature_cols,
-        label_col=label_col,
-        batch_size=batch_size,
-        filter_in_universe=filter_in_universe,
-        return_keys=True,
-        use_tqdm=use_tqdm,
-        stage_desc="predict_scan",
-    )
+    model_cfg = cfg.get("model", {})
+    model_name = str(model_cfg.get("name", "mlp")).strip().lower()
+    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm"}
+    seq_len = int(model_cfg.get("seq_len", cfg.get("sample", {}).get("lookback", 60)))
+    warmup_start = str(pred_cfg.get("warmup_start_date", start_date))
+
+    if is_sequence_model:
+        it = iter_processed_sequence_feature_batches(
+            pcfg,
+            start_date=warmup_start,
+            end_date=end_date,
+            feature_cols=feature_cols,
+            seq_len=seq_len,
+            batch_size=batch_size,
+            filter_in_universe=filter_in_universe,
+            return_keys=True,
+            use_tqdm=use_tqdm,
+            stage_desc="predict_seq",
+            emit_start_date=start_date,
+        )
+    else:
+        split = ProcessedSplit(name="predict", start_date=start_date, end_date=end_date)
+        it = iter_processed_batches(
+            pcfg,
+            split,
+            feature_cols=feature_cols,
+            label_col=label_col,
+            batch_size=batch_size,
+            filter_in_universe=filter_in_universe,
+            return_keys=True,
+            use_tqdm=use_tqdm,
+            stage_desc="predict_tab",
+        )
 
     n_rows = 0
     with torch.no_grad():

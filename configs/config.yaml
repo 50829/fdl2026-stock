@@ -7,7 +7,7 @@ sample:
   train_end: "20231231"
   valid_end: "20241231"
   lookback: 60
-  horizon: 5
+  horizon: 1
 
 universe:
   min_list_days: 60

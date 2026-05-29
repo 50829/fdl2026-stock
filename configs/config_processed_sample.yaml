@@ -5,9 +5,14 @@ task:
   label: label_1d
 
 model:
-  name: mlp
-  hidden: 32
-  dropout: 0.0
+  name: alstm
+  seq_len: 2
+  input_dim: 2
+  hidden_size: 8
+  num_layers: 1
+  rnn_type: GRU
+  dropout: 0.1
+  attention_hidden_ratio: 0.5
 
 train:
   seed: 2026
@@ -26,4 +31,4 @@ predict:
   batch_size: 128
   use_tqdm: false
   output_path: outputs/smoke_src/pred_test.parquet
-
+  warmup_start_date: "20240104"
