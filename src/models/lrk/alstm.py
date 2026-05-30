@@ -31,6 +31,7 @@ class ALSTM(nn.Module):
         dropout: float = 0.2,
         attention_hidden_ratio: float = 0.5,
         seq_len: int = 60,
+        use_attention: bool = True,
     ):
         super().__init__()
         self.input_dim = int(input_dim)
@@ -39,6 +40,7 @@ class ALSTM(nn.Module):
         self.rnn_type = str(rnn_type).upper()
         self.dropout = float(dropout)
         self.seq_len = int(seq_len)
+        self.use_attention = bool(use_attention)
 
         self.feature_proj = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_size),
@@ -66,22 +68,30 @@ class ALSTM(nn.Module):
             raise ValueError(f"Unsupported rnn_type: {rnn_type}")
 
         self.attention = TemporalAttention(self.hidden_size, attention_hidden_ratio=attention_hidden_ratio)
-        self.head = nn.Linear(self.hidden_size * 2, 1)
+        head_dim = self.hidden_size * 2 if self.use_attention else self.hidden_size
+        self.head = nn.Linear(head_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         e = self.feature_proj(x)
         h, _ = self.rnn(e)
-        c, _ = self.attention(h)
         h_last = h[:, -1, :]
-        z = torch.cat([h_last, c], dim=-1)
+        if self.use_attention:
+            c, _ = self.attention(h)
+            z = torch.cat([h_last, c], dim=-1)
+        else:
+            z = h_last
         return self.head(z).squeeze(-1)
 
     def forward_with_attention(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         e = self.feature_proj(x)
         h, _ = self.rnn(e)
-        c, attn = self.attention(h)
         h_last = h[:, -1, :]
-        z = torch.cat([h_last, c], dim=-1)
+        if self.use_attention:
+            c, attn = self.attention(h)
+            z = torch.cat([h_last, c], dim=-1)
+        else:
+            c = h_last
+            attn = torch.zeros(h.shape[:2], device=h.device, dtype=h.dtype)
+            z = h_last
         score = self.head(z).squeeze(-1)
         return {"score": score, "attn_weights": attn, "hidden_states": h, "context": c, "last_hidden": h_last}
-

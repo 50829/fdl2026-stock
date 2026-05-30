@@ -77,6 +77,7 @@ def predict(cfg: dict):
             raise ValueError("predict requires start_date/end_date or a valid split")
 
     filter_in_universe = bool(pred_cfg.get("filter_in_universe", True))
+    cache_data = bool(pred_cfg.get("cache_data", cfg.get("train", {}).get("cache_data", False)))
     batch_size = int(pred_cfg.get("batch_size", 4096))
     out_path = str(pred_cfg.get("output_path", _default_pred_path(start_date, end_date)))
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +99,7 @@ def predict(cfg: dict):
 
     model_cfg = cfg.get("model", {})
     model_name = str(model_cfg.get("name", "mlp")).strip().lower()
-    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm"}
+    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm", "tcn", "temporal_conv", "temporal_convolution"}
     seq_len = int(model_cfg.get("seq_len", cfg.get("sample", {}).get("lookback", 60)))
     warmup_start = str(pred_cfg.get("warmup_start_date", start_date))
 
@@ -115,6 +116,7 @@ def predict(cfg: dict):
             use_tqdm=use_tqdm,
             stage_desc="predict_seq",
             emit_start_date=start_date,
+            cache_in_memory=cache_data,
         )
     else:
         split = ProcessedSplit(name="predict", start_date=start_date, end_date=end_date)
@@ -128,6 +130,7 @@ def predict(cfg: dict):
             return_keys=True,
             use_tqdm=use_tqdm,
             stage_desc="predict_tab",
+            cache_in_memory=cache_data,
         )
 
     n_rows = 0

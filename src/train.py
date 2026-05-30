@@ -77,7 +77,7 @@ def train(cfg: dict):
 
     model_cfg = cfg.get("model", {})
     model_name = str(model_cfg.get("name", "mlp")).strip().lower()
-    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm"}
+    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm", "tcn", "temporal_conv", "temporal_convolution"}
 
     in_dim = int(len(feature_cols))
     model = build_model(cfg, in_dim=in_dim)
@@ -94,6 +94,7 @@ def train(cfg: dict):
     batch_size = int(train_cfg.get("batch_size", 256))
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     filter_in_universe = bool(train_cfg.get("filter_in_universe", True))
+    cache_data = bool(train_cfg.get("cache_data", False))
 
     seq_len = int(model_cfg.get("seq_len", cfg.get("sample", {}).get("lookback", 60)))
 
@@ -115,6 +116,7 @@ def train(cfg: dict):
                 return_keys=False,
                 use_tqdm=use_tqdm,
                 stage_desc="train_seq",
+                cache_in_memory=cache_data,
             )
         else:
             train_iter = iter_processed_batches(
@@ -127,6 +129,7 @@ def train(cfg: dict):
                 return_keys=False,
                 use_tqdm=use_tqdm,
                 stage_desc="train_tab",
+                cache_in_memory=cache_data,
             )
 
         for batch in train_iter:
@@ -159,6 +162,7 @@ def train(cfg: dict):
                 return_keys=False,
                 use_tqdm=use_tqdm,
                 stage_desc="valid_seq",
+                cache_in_memory=cache_data,
             )
         else:
             valid_iter = iter_processed_batches(
@@ -171,6 +175,7 @@ def train(cfg: dict):
                 return_keys=False,
                 use_tqdm=use_tqdm,
                 stage_desc="valid_tab",
+                cache_in_memory=cache_data,
             )
         with torch.no_grad():
             for batch in valid_iter:

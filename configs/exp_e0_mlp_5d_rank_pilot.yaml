@@ -1,0 +1,29 @@
+data:
+  processed_dir: data/processed_pilot
+
+task:
+  label: label_5d__cs_rank
+
+model:
+  name: mlp
+  hidden: 256
+  dropout: 0.2
+
+train:
+  seed: 2026
+  batch_size: 8192
+  epochs: 3
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  grad_clip: 3.0
+  filter_in_universe: true
+  cache_data: true
+  use_tqdm: false
+  save_path: outputs/models/e0_mlp_5d_rank_pilot.pt
+
+predict:
+  ckpt: outputs/models/e0_mlp_5d_rank_pilot.pt
+  split: test
+  batch_size: 8192
+  use_tqdm: false
+  output_path: outputs/predictions/e0_mlp_5d_rank_pilot_test.parquet

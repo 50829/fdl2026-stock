@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from torch import nn
 
-from .lrk import ALSTM
+from .lrk import ALSTM, TCNModel
 from .lstm import LSTMModel
 from .mlp import MLPModel
 from .transformer import TransformerModel
@@ -40,6 +40,7 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
         dropout = float(model_cfg.get("dropout", 0.2))
         attention_hidden_ratio = float(model_cfg.get("attention_hidden_ratio", 0.5))
         seq_len = int(model_cfg.get("seq_len", 60))
+        use_attention = bool(model_cfg.get("use_attention", True))
         return ALSTM(
             input_dim=input_dim,
             hidden_size=hidden_size,
@@ -48,9 +49,27 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
             dropout=dropout,
             attention_hidden_ratio=attention_hidden_ratio,
             seq_len=seq_len,
+            use_attention=use_attention,
+        )
+
+    if name in {"tcn", "temporal_conv", "temporal_convolution"}:
+        channels = int(model_cfg.get("channels", model_cfg.get("hidden", 64)))
+        levels = int(model_cfg.get("levels", model_cfg.get("num_layers", 4)))
+        kernel_size = int(model_cfg.get("kernel_size", 3))
+        dropout = float(model_cfg.get("dropout", 0.2))
+        use_attention = bool(model_cfg.get("use_attention", False))
+        attention_hidden_ratio = float(model_cfg.get("attention_hidden_ratio", 0.5))
+        return TCNModel(
+            in_dim=in_dim,
+            channels=channels,
+            levels=levels,
+            kernel_size=kernel_size,
+            dropout=dropout,
+            use_attention=use_attention,
+            attention_hidden_ratio=attention_hidden_ratio,
         )
 
     raise ValueError(f"Unknown model name: {name}")
 
 
-__all__ = ["build_model", "MLPModel", "LSTMModel", "TransformerModel", "ALSTM"]
+__all__ = ["build_model", "MLPModel", "LSTMModel", "TransformerModel", "ALSTM", "TCNModel"]
