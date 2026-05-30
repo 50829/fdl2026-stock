@@ -5,6 +5,7 @@ from .processed import (
     iter_processed_batches,
     iter_processed_sequence_batches,
     iter_processed_sequence_feature_batches,
+    iter_processed_sequence_labeled_feature_batches,
     load_feature_columns,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "iter_processed_batches",
     "iter_processed_sequence_batches",
     "iter_processed_sequence_feature_batches",
+    "iter_processed_sequence_labeled_feature_batches",
     "load_feature_columns",
 ]

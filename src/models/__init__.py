@@ -41,6 +41,8 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
         attention_hidden_ratio = float(model_cfg.get("attention_hidden_ratio", 0.5))
         seq_len = int(model_cfg.get("seq_len", 60))
         use_attention = bool(model_cfg.get("use_attention", True))
+        input_layernorm = bool(model_cfg.get("input_layernorm", False))
+        hidden_layernorm = bool(model_cfg.get("hidden_layernorm", False))
         return ALSTM(
             input_dim=input_dim,
             hidden_size=hidden_size,
@@ -50,6 +52,8 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
             attention_hidden_ratio=attention_hidden_ratio,
             seq_len=seq_len,
             use_attention=use_attention,
+            input_layernorm=input_layernorm,
+            hidden_layernorm=hidden_layernorm,
         )
 
     if name in {"tcn", "temporal_conv", "temporal_convolution"}:

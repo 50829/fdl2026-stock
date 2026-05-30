@@ -32,6 +32,8 @@ class ALSTM(nn.Module):
         attention_hidden_ratio: float = 0.5,
         seq_len: int = 60,
         use_attention: bool = True,
+        input_layernorm: bool = False,
+        hidden_layernorm: bool = False,
     ):
         super().__init__()
         self.input_dim = int(input_dim)
@@ -41,7 +43,10 @@ class ALSTM(nn.Module):
         self.dropout = float(dropout)
         self.seq_len = int(seq_len)
         self.use_attention = bool(use_attention)
+        self.input_layernorm = bool(input_layernorm)
+        self.hidden_layernorm = bool(hidden_layernorm)
 
+        self.input_norm = nn.LayerNorm(self.input_dim) if self.input_layernorm else nn.Identity()
         self.feature_proj = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_size),
             nn.Tanh(),
@@ -67,13 +72,16 @@ class ALSTM(nn.Module):
         else:
             raise ValueError(f"Unsupported rnn_type: {rnn_type}")
 
+        self.hidden_norm = nn.LayerNorm(self.hidden_size) if self.hidden_layernorm else nn.Identity()
         self.attention = TemporalAttention(self.hidden_size, attention_hidden_ratio=attention_hidden_ratio)
         head_dim = self.hidden_size * 2 if self.use_attention else self.hidden_size
         self.head = nn.Linear(head_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.input_norm(x)
         e = self.feature_proj(x)
         h, _ = self.rnn(e)
+        h = self.hidden_norm(h)
         h_last = h[:, -1, :]
         if self.use_attention:
             c, _ = self.attention(h)
@@ -83,8 +91,10 @@ class ALSTM(nn.Module):
         return self.head(z).squeeze(-1)
 
     def forward_with_attention(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        x = self.input_norm(x)
         e = self.feature_proj(x)
         h, _ = self.rnn(e)
+        h = self.hidden_norm(h)
         h_last = h[:, -1, :]
         if self.use_attention:
             c, attn = self.attention(h)

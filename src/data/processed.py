@@ -308,9 +308,31 @@ def _iter_cached_sequence_feature_batches(
 ) -> Iterator[dict[str, object]]:
     key_trade, key_code = cfg.key_cols
     emit_start_date = str(emit_start_date) if emit_start_date is not None else str(start_date)
-    m = _load_cached_feature_frame(cfg, start_date, end_date, feature_cols, filter_in_universe)
+    m = _load_cached_feature_frame(cfg, start_date, end_date, feature_cols, False)
     if m.empty:
         return
+
+    eligible_keys: set[tuple[str, str]] | None = None
+    if filter_in_universe:
+        try:
+            import pyarrow.dataset as ds
+        except Exception as e:
+            raise ImportError("pyarrow is required to read data/processed/*.parquet") from e
+        proc = Path(cfg.processed_dir)
+        u_path = proc / cfg.universe_path
+        if u_path.exists():
+            u_flag = cfg.universe_flag_col
+            emit_filter = _date_range_filter(ds, key_trade, emit_start_date, end_date)
+            universe = (
+                ds.dataset(str(u_path), format="parquet")
+                .to_table(columns=[key_trade, key_code, u_flag], filter=emit_filter)
+                .to_pandas()
+            )
+            if not universe.empty:
+                universe[key_trade] = universe[key_trade].astype(str)
+                universe[key_code] = universe[key_code].astype(str)
+                universe = universe[universe[u_flag].fillna(False)]
+                eligible_keys = set(zip(universe[key_trade], universe[key_code]))
 
     trade_dates = sorted(m[key_trade].astype(str).unique().tolist())
     date_to_idx = {d: i for i, d in enumerate(trade_dates)}
@@ -373,6 +395,14 @@ def _iter_cached_sequence_feature_batches(
             windows = np.lib.stride_tricks.sliding_window_view(X_run, seq_len, axis=0).transpose(0, 2, 1)
             end_idx = idx[start + seq_len - 1 : end]
             keep = end_idx >= int(emit_idx)
+            if eligible_keys is not None and np.any(keep):
+                d_win = d_stock[start + seq_len - 1 : end]
+                key_keep = np.fromiter(
+                    ((str(d), str(code)) in eligible_keys for d in d_win),
+                    dtype=bool,
+                    count=len(d_win),
+                )
+                keep = keep & key_keep
             if not np.any(keep):
                 continue
             windows = windows[keep]
@@ -382,6 +412,167 @@ def _iter_cached_sequence_feature_batches(
                 d_buf.append(d_stock[start + seq_len - 1 : end][keep])
                 c_buf.append(np.full(n_win, str(code), dtype=object))
             buf_n += int(len(windows))
+            for out in _flush(force=False):
+                yield out
+
+    for out in _flush(force=True):
+        yield out
+
+
+def _iter_cached_sequence_labeled_feature_batches(
+    cfg: ProcessedConfig,
+    start_date: str,
+    end_date: str,
+    emit_start_date: str,
+    feature_cols: list[str],
+    label_col: str,
+    seq_len: int,
+    batch_size: int,
+    filter_in_universe: bool,
+    return_keys: bool,
+) -> Iterator[dict[str, object]]:
+    try:
+        import pandas as pd
+        import pyarrow.dataset as ds
+    except Exception as e:
+        raise ImportError("pandas and pyarrow are required to read data/processed/*.parquet") from e
+
+    key_trade, key_code = cfg.key_cols
+    proc = Path(cfg.processed_dir)
+    f_path = proc / cfg.features_path
+    l_path = proc / cfg.labels_path
+    u_path = proc / cfg.universe_path
+    u_flag = cfg.universe_flag_col
+
+    start_date = str(start_date)
+    end_date = str(end_date)
+    emit_start_date = str(emit_start_date)
+    f_cols = [key_trade, key_code] + list(feature_cols)
+    feature_filter = _date_range_filter(ds, key_trade, start_date, end_date)
+    emit_filter = _date_range_filter(ds, key_trade, emit_start_date, end_date)
+
+    features = ds.dataset(str(f_path), format="parquet").to_table(columns=f_cols, filter=feature_filter).to_pandas()
+    labels = (
+        ds.dataset(str(l_path), format="parquet")
+        .to_table(columns=[key_trade, key_code, label_col], filter=emit_filter)
+        .to_pandas()
+    )
+    if features.empty or labels.empty:
+        return
+
+    features[key_trade] = features[key_trade].astype(str)
+    features[key_code] = features[key_code].astype(str)
+    labels[key_trade] = labels[key_trade].astype(str)
+    labels[key_code] = labels[key_code].astype(str)
+    labels = labels.dropna(subset=[label_col])
+
+    if filter_in_universe and u_path.exists() and not labels.empty:
+        universe = (
+            ds.dataset(str(u_path), format="parquet")
+            .to_table(columns=[key_trade, key_code, u_flag], filter=emit_filter)
+            .to_pandas()
+        )
+        universe[key_trade] = universe[key_trade].astype(str)
+        universe[key_code] = universe[key_code].astype(str)
+        labels = labels.merge(universe, on=[key_trade, key_code], how="left")
+        labels = labels[labels[u_flag].fillna(False)].drop(columns=[u_flag])
+
+    if labels.empty:
+        return
+
+    label_map = labels.set_index([key_trade, key_code])[label_col]
+    trade_dates = sorted(features[key_trade].unique().tolist())
+    date_to_idx = {d: i for i, d in enumerate(trade_dates)}
+    emit_idx = date_to_idx.get(emit_start_date, 0)
+
+    X_buf: list[np.ndarray] = []
+    y_buf: list[np.ndarray] = []
+    d_buf: list[np.ndarray] = []
+    c_buf: list[np.ndarray] = []
+    buf_n = 0
+
+    def _flush(force: bool = False):
+        nonlocal X_buf, y_buf, d_buf, c_buf, buf_n
+        while buf_n >= int(batch_size) or (force and buf_n > 0):
+            need = int(batch_size) if buf_n >= int(batch_size) else buf_n
+            out_x: list[np.ndarray] = []
+            out_y: list[np.ndarray] = []
+            out_d: list[np.ndarray] = []
+            out_c: list[np.ndarray] = []
+            take_left = need
+            while take_left > 0:
+                take = min(take_left, int(len(y_buf[0])))
+                out_x.append(X_buf[0][:take])
+                out_y.append(y_buf[0][:take])
+                if return_keys:
+                    out_d.append(d_buf[0][:take])
+                    out_c.append(c_buf[0][:take])
+                if take == int(len(y_buf[0])):
+                    X_buf.pop(0)
+                    y_buf.pop(0)
+                    if return_keys:
+                        d_buf.pop(0)
+                        c_buf.pop(0)
+                else:
+                    X_buf[0] = X_buf[0][take:]
+                    y_buf[0] = y_buf[0][take:]
+                    if return_keys:
+                        d_buf[0] = d_buf[0][take:]
+                        c_buf[0] = c_buf[0][take:]
+                take_left -= take
+            buf_n -= need
+            out: dict[str, object] = {
+                "X": np.concatenate(out_x, axis=0).astype(np.float32, copy=False),
+                "y": np.concatenate(out_y, axis=0).astype(np.float32, copy=False),
+            }
+            if return_keys:
+                out["trade_date"] = np.concatenate(out_d, axis=0).astype(str)
+                out["ts_code"] = np.concatenate(out_c, axis=0).astype(str)
+            yield out
+
+    def _run_bounds(idx: np.ndarray):
+        breaks = np.flatnonzero(np.diff(idx) != 1) + 1
+        starts = np.concatenate(([0], breaks))
+        ends = np.concatenate((breaks, [len(idx)]))
+        return zip(starts, ends)
+
+    features = features.sort_values([key_code, key_trade], kind="mergesort")
+    for code, stock in features.groupby(key_code, sort=True):
+        stock = stock.sort_values(key_trade, kind="mergesort")
+        idx = stock[key_trade].map(date_to_idx).to_numpy(dtype=np.int32, copy=False)
+        X_stock = stock[feature_cols].to_numpy(dtype=np.float32, copy=False)
+        d_stock = stock[key_trade].astype(str).to_numpy(copy=False)
+
+        for start, end in _run_bounds(idx):
+            if end - start < seq_len:
+                continue
+            X_run = X_stock[start:end]
+            windows = np.lib.stride_tricks.sliding_window_view(X_run, seq_len, axis=0).transpose(0, 2, 1)
+            d_win = d_stock[start + seq_len - 1 : end]
+            end_idx = idx[start + seq_len - 1 : end]
+            keep = end_idx >= int(emit_idx)
+            if not np.any(keep):
+                continue
+
+            d_keep = d_win[keep]
+            label_index = pd.MultiIndex.from_arrays(
+                [d_keep.astype(str), np.full(len(d_keep), str(code), dtype=object)],
+                names=[key_trade, key_code],
+            )
+            y_keep = label_map.reindex(label_index).to_numpy(dtype=np.float32, na_value=np.nan)
+            label_keep = np.isfinite(y_keep)
+            if not np.any(label_keep):
+                continue
+
+            X_part = windows[keep][label_keep]
+            y_part = y_keep[label_keep]
+            X_buf.append(X_part)
+            y_buf.append(y_part)
+            if return_keys:
+                n_part = int(len(y_part))
+                d_buf.append(d_keep[label_keep])
+                c_buf.append(np.full(n_part, str(code), dtype=object))
+            buf_n += int(len(y_part))
             for out in _flush(force=False):
                 yield out
 
@@ -751,3 +942,33 @@ def iter_processed_sequence_feature_batches(
 
     for out in _flush(force=True):
         yield out
+
+
+def iter_processed_sequence_labeled_feature_batches(
+    cfg: ProcessedConfig,
+    start_date: str,
+    end_date: str,
+    emit_start_date: str,
+    feature_cols: list[str],
+    label_col: str,
+    seq_len: int,
+    batch_size: int,
+    filter_in_universe: bool,
+    return_keys: bool,
+    use_tqdm: bool = False,
+    stage_desc: str = "seq_labeled",
+    cache_in_memory: bool = False,
+) -> Iterator[dict[str, object]]:
+    del use_tqdm, stage_desc, cache_in_memory
+    yield from _iter_cached_sequence_labeled_feature_batches(
+        cfg,
+        start_date,
+        end_date,
+        emit_start_date,
+        feature_cols,
+        label_col,
+        seq_len,
+        batch_size,
+        filter_in_universe,
+        return_keys,
+    )

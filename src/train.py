@@ -17,6 +17,7 @@ from src.data import (
     build_processed_splits,
     iter_processed_batches,
     iter_processed_sequence_batches,
+    iter_processed_sequence_labeled_feature_batches,
     load_feature_columns,
 )
 from src.models import build_model
@@ -56,6 +57,35 @@ def _infer_label_col(cfg: dict) -> str:
     return f"label_{horizon}d"
 
 
+def _build_loss(name: str) -> nn.Module:
+    name = str(name).lower()
+    if name in {"mse", "l2"}:
+        return nn.MSELoss()
+    if name in {"smooth_l1", "huber"}:
+        return nn.SmoothL1Loss()
+    raise ValueError(f"unsupported train.loss for src.train: {name}")
+
+
+def _resolve_warmup_start(pcfg: ProcessedConfig, start_date: str, seq_len: int) -> str:
+    import pyarrow.dataset as ds
+
+    key_trade, _ = pcfg.key_cols
+    proc = Path(pcfg.processed_dir)
+    dates = set()
+    scan = ds.dataset(str(proc / pcfg.features_path), format="parquet").scanner(columns=[key_trade], batch_size=1 << 20)
+    for batch in scan.to_reader():
+        dates.update(str(x) for x in batch.column(0).to_pylist())
+    ordered = sorted(dates)
+    if not ordered:
+        return str(start_date)
+    idx = 0
+    for i, d in enumerate(ordered):
+        if d >= str(start_date):
+            idx = i
+            break
+    return ordered[max(0, idx - int(seq_len) + 1)]
+
+
 def train(cfg: dict):
     train_cfg = cfg.get("train", {})
     seed = int(train_cfg.get("seed", cfg.get("seed", 2026)))
@@ -88,15 +118,24 @@ def train(cfg: dict):
     lr = float(train_cfg.get("learning_rate", train_cfg.get("lr", 1e-3)))
     weight_decay = float(train_cfg.get("weight_decay", 0.0))
     opt = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn = nn.MSELoss()
+    loss_fn = _build_loss(str(train_cfg.get("loss", "mse")))
 
     epochs = int(train_cfg.get("epochs", 20))
     batch_size = int(train_cfg.get("batch_size", 256))
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     filter_in_universe = bool(train_cfg.get("filter_in_universe", True))
     cache_data = bool(train_cfg.get("cache_data", False))
+    patience_raw = train_cfg.get("patience")
+    patience = int(patience_raw) if patience_raw is not None else None
+    min_delta = float(train_cfg.get("min_delta", 0.0))
+    save_path = Path(train_cfg.get("save_path", "outputs/models/ckpt.pt"))
+    save_path.parent.mkdir(parents=True, exist_ok=True)
 
     seq_len = int(model_cfg.get("seq_len", cfg.get("sample", {}).get("lookback", 60)))
+    best_loss = float("inf")
+    best_epoch = 0
+    bad_epochs = 0
+    history = []
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -105,9 +144,11 @@ def train(cfg: dict):
         tr_n = 0
 
         if is_sequence_model:
-            train_iter = iter_processed_sequence_batches(
+            train_iter = iter_processed_sequence_labeled_feature_batches(
                 pcfg,
-                splits["train"],
+                start_date=splits["train"].start_date,
+                end_date=splits["train"].end_date,
+                emit_start_date=splits["train"].start_date,
                 feature_cols=feature_cols,
                 label_col=label_col,
                 seq_len=seq_len,
@@ -151,9 +192,12 @@ def train(cfg: dict):
         va_loss_sum = 0.0
         va_n = 0
         if is_sequence_model:
-            valid_iter = iter_processed_sequence_batches(
+            valid_warmup_start = _resolve_warmup_start(pcfg, splits["valid"].start_date, seq_len)
+            valid_iter = iter_processed_sequence_labeled_feature_batches(
                 pcfg,
-                splits["valid"],
+                start_date=valid_warmup_start,
+                end_date=splits["valid"].end_date,
+                emit_start_date=splits["valid"].start_date,
                 feature_cols=feature_cols,
                 label_col=label_col,
                 seq_len=seq_len,
@@ -187,22 +231,36 @@ def train(cfg: dict):
                 va_n += int(yb.shape[0])
         va_loss = va_loss_sum / max(1, va_n)
         elapsed = time.perf_counter() - t0
+        row = {"epoch": epoch, "epochs": epochs, "train_loss": tr_loss, "val_loss": va_loss, "sec": elapsed}
+        history.append(row)
 
         _pwrite(
             tqdm_mod,
-            json.dumps({"epoch": epoch, "epochs": epochs, "train_loss": tr_loss, "val_loss": va_loss, "sec": elapsed}, ensure_ascii=False),
+            json.dumps(row, ensure_ascii=False),
         )
 
-    save_path = Path(train_cfg.get("save_path", "outputs/models/ckpt.pt"))
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    ckpt = {
-        "model_state": model.state_dict(),
-        "feature_cols": feature_cols,
-        "label_col": label_col,
-        "cfg": cfg,
-    }
-    torch.save(ckpt, save_path)
-    _pwrite(tqdm_mod, json.dumps({"saved": str(save_path)}, ensure_ascii=False))
+        if va_loss < best_loss - min_delta:
+            best_loss = va_loss
+            best_epoch = epoch
+            bad_epochs = 0
+            ckpt = {
+                "model_state": model.state_dict(),
+                "feature_cols": feature_cols,
+                "label_col": label_col,
+                "cfg": cfg,
+                "best_epoch": best_epoch,
+                "best_valid_loss": best_loss,
+                "history": history,
+            }
+            torch.save(ckpt, save_path)
+            _pwrite(tqdm_mod, json.dumps({"saved_best": str(save_path), "best_epoch": best_epoch, "best_valid_loss": best_loss}, ensure_ascii=False))
+        else:
+            bad_epochs += 1
+            if patience is not None and bad_epochs >= patience:
+                _pwrite(tqdm_mod, json.dumps({"early_stop": True, "epoch": epoch, "best_epoch": best_epoch}, ensure_ascii=False))
+                break
+
+    _pwrite(tqdm_mod, json.dumps({"saved": str(save_path), "best_epoch": best_epoch, "best_valid_loss": best_loss}, ensure_ascii=False))
 
 
 def main():

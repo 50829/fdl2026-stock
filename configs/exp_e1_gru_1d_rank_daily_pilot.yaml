@@ -1,8 +1,8 @@
 data:
-  processed_dir: data/processed
+  processed_dir: data/processed_pilot
 
 task:
-  label: label_5d__cs_rank
+  label: label_1d__cs_rank
 
 model:
   name: alstm
@@ -28,18 +28,18 @@ train:
   patience: 2
   min_delta: 0.0
   use_tqdm: false
-  save_path: outputs/models/e1_gru_5d_rank.pt
+  save_path: outputs/models/e1_gru_1d_rank_daily_pilot.pt
 
 predict:
-  ckpt: outputs/models/e1_gru_5d_rank.pt
+  ckpt: outputs/models/e1_gru_1d_rank_daily_pilot.pt
   split: test
   batch_size: 4096
   use_tqdm: false
-  output_path: outputs/predictions/e1_gru_5d_rank_test.parquet
+  output_path: outputs/predictions/e1_gru_1d_rank_daily_pilot_test.parquet
 
 backtest:
-  return_col: label_5d
+  return_col: label_1d
   n_hold: 20
-  k_rotate: 5
-  step_days: 5
+  k_rotate: 20
+  step_days: 1
   transaction_cost_bps: 5.0

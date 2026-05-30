@@ -11,11 +11,11 @@ import torch
 import yaml
 from torch import nn, optim
 
-from src.data import ProcessedConfig, build_processed_splits, iter_processed_sequence_batches, load_feature_columns
+from src.data import ProcessedConfig, build_processed_splits, iter_processed_sequence_labeled_feature_batches, load_feature_columns
 from src.data.feature_meta import read_feature_meta, resolve_feature_columns, read_parquet_feature_columns
 from src.models import build_model
 from src.train import set_seed
-from src.models.sdd.run_e0_e1 import evaluate_split, write_json
+from src.models.sdd.run_e0_e1 import evaluate_split, resolve_warmup_start, write_json
 
 
 BASE_CFG = {
@@ -54,6 +54,11 @@ EXPERIMENTS = {
     "base_attn_h128_l2": {},
     "hidden64": {"model": {"hidden_size": 64, "input_dim": 112}},
     "layer1": {"model": {"num_layers": 1}},
+    "layer1_input_layernorm": {"model": {"num_layers": 1, "input_layernorm": True}},
+    "layer1_hidden_layernorm": {"model": {"num_layers": 1, "hidden_layernorm": True}},
+    "layer1_input_hidden_layernorm": {
+        "model": {"num_layers": 1, "input_layernorm": True, "hidden_layernorm": True}
+    },
     "no_attention": {"model": {"use_attention": False}},
     "core_features": {
         "features": {
@@ -249,9 +254,11 @@ def train_one(cfg: dict, out_dir: Path) -> dict:
         model.train()
         tr_sum = 0.0
         tr_n = 0
-        train_iter = iter_processed_sequence_batches(
+        train_iter = iter_processed_sequence_labeled_feature_batches(
             pcfg,
-            splits["train"],
+            start_date=splits["train"].start_date,
+            end_date=splits["train"].end_date,
+            emit_start_date=splits["train"].start_date,
             feature_cols=feature_cols,
             label_col=label_col,
             seq_len=seq_len,
@@ -276,9 +283,12 @@ def train_one(cfg: dict, out_dir: Path) -> dict:
         model.eval()
         va_sum = 0.0
         va_n = 0
-        valid_iter = iter_processed_sequence_batches(
+        valid_warmup_start = resolve_warmup_start(pcfg, splits["valid"].start_date, seq_len)
+        valid_iter = iter_processed_sequence_labeled_feature_batches(
             pcfg,
-            splits["valid"],
+            start_date=valid_warmup_start,
+            end_date=splits["valid"].end_date,
+            emit_start_date=splits["valid"].start_date,
             feature_cols=feature_cols,
             label_col=label_col,
             seq_len=seq_len,
@@ -349,16 +359,66 @@ def run_ablation(experiment: str, out_root: Path, processed_dir: str | None = No
     return summary
 
 
+def run_feature_list_ablation(
+    base_experiment: str,
+    feature_list: str | Path,
+    custom_name: str,
+    out_root: Path,
+    processed_dir: str | None = None,
+    epochs: int | None = None,
+) -> dict:
+    cfg = deep_update(BASE_CFG, EXPERIMENTS[base_experiment])
+    columns = [line.strip() for line in Path(feature_list).read_text(encoding="utf-8").splitlines() if line.strip()]
+    cfg["features"] = {"mode": "explicit", "columns": columns}
+    if processed_dir is not None:
+        cfg["data"]["processed_dir"] = str(processed_dir)
+    if epochs is not None:
+        cfg["train"]["epochs"] = int(epochs)
+    out_dir = out_root / custom_name
+    train_summary = train_one(cfg, out_dir)
+    eval_summary = {}
+    for split in ["valid", "test"]:
+        _, metrics = evaluate_split(cfg, split, out_dir / split, raw_return_col="label_5d")
+        eval_summary[split] = metrics
+    summary = {
+        "experiment": custom_name,
+        "base_experiment": base_experiment,
+        "feature_list": str(feature_list),
+        "train": train_summary,
+        "eval": eval_summary,
+        "config": cfg,
+    }
+    write_json(out_dir / "summary.json", summary)
+    print(json.dumps({"experiment": custom_name, "eval": eval_summary, "best_epoch": train_summary["best_epoch"]}, ensure_ascii=False), flush=True)
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiments", nargs="+", default=list(EXPERIMENTS), choices=sorted(EXPERIMENTS))
     parser.add_argument("--out-root", default="outputs/sdd_ablation")
     parser.add_argument("--processed-dir", default=None)
     parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--feature-list", default=None)
+    parser.add_argument("--custom-name", default=None)
     args = parser.parse_args()
 
     out_root = Path(args.out_root)
-    summaries = [run_ablation(exp, out_root, processed_dir=args.processed_dir, epochs=args.epochs) for exp in args.experiments]
+    if args.feature_list:
+        base_experiment = args.experiments[0]
+        custom_name = args.custom_name or f"{base_experiment}_feature_list"
+        summaries = [
+            run_feature_list_ablation(
+                base_experiment,
+                args.feature_list,
+                custom_name,
+                out_root,
+                processed_dir=args.processed_dir,
+                epochs=args.epochs,
+            )
+        ]
+    else:
+        summaries = [run_ablation(exp, out_root, processed_dir=args.processed_dir, epochs=args.epochs) for exp in args.experiments]
     write_json(out_root / "summary.json", {"experiments": summaries})
 
 

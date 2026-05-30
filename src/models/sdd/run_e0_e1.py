@@ -48,16 +48,45 @@ EXPERIMENTS = {
         "name": "e1_gru_5d_rank",
         "raw_return_col": "label_5d",
     },
+    "e1_daily": {
+        "config": "configs/exp_e1_gru_1d_rank_daily_pilot.yaml",
+        "name": "e1_gru_1d_rank_daily_pilot",
+        "raw_return_col": "label_1d",
+    },
+    "e1_daily_full": {
+        "config": "configs/exp_e1_gru_1d_rank_daily.yaml",
+        "name": "e1_gru_1d_rank_daily",
+        "raw_return_col": "label_1d",
+    },
 }
 
 
 @dataclass(frozen=True)
 class BacktestConfig:
+    mode: str = "topk"
     n_hold: int = 20
     k_rotate: int = 5
     step_days: int = 5
+    tranche_size: int = 4
+    hold_days: int = 5
+    daily_return_col: str = "label_1d"
     transaction_cost_bps: float = 5.0
     trading_days_per_year: int = 252
+
+
+def backtest_config_from_cfg(cfg: dict) -> BacktestConfig:
+    bt_cfg = cfg.get("backtest", {})
+    return BacktestConfig(
+        mode=str(bt_cfg.get("mode", "topk")),
+        n_hold=int(bt_cfg.get("n_hold", 20)),
+        k_rotate=int(bt_cfg.get("k_rotate", 5)),
+        step_days=int(bt_cfg.get("step_days", 5)),
+        tranche_size=int(bt_cfg.get("tranche_size", 4)),
+        hold_days=int(bt_cfg.get("hold_days", 5)),
+        daily_return_col=str(bt_cfg.get("daily_return_col", "label_1d")),
+        transaction_cost_bps=float(bt_cfg.get("transaction_cost_bps", 5.0)),
+        trading_days_per_year=int(bt_cfg.get("trading_days_per_year", 252)),
+    )
 
 
 def read_yaml(path: str | Path) -> dict:
@@ -180,8 +209,17 @@ def evaluate_split(
             rows.append(pd.DataFrame(row))
 
     pred_df = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    bt_cfg = backtest_config_from_cfg(cfg)
+    extra_label_cols = [bt_cfg.daily_return_col] if bt_cfg.mode == "rolling_tranche" else None
     if not pred_df.empty:
-        pred_df = attach_labels(pcfg, pred_df, split, label_col=label_col, raw_return_col=raw_return_col)
+        pred_df = attach_labels(
+            pcfg,
+            pred_df,
+            split,
+            label_col=label_col,
+            raw_return_col=raw_return_col,
+            extra_label_cols=extra_label_cols,
+        )
         pred_df = pred_df.dropna(subset=[label_col])
 
     n = int(len(pred_df))
@@ -199,7 +237,10 @@ def evaluate_split(
         "raw_return_col": raw_return_col,
     }
     metrics.update(ic_metrics(pred_df, label_col=label_col))
-    metrics.update(backtest_topk(pred_df, return_col=raw_return_col, cfg=BacktestConfig()))
+    if bt_cfg.mode == "rolling_tranche":
+        metrics.update(backtest_rolling_tranche(pred_df, cfg=bt_cfg))
+    else:
+        metrics.update(backtest_topk(pred_df, return_col=raw_return_col, cfg=bt_cfg))
 
     out_dir.mkdir(parents=True, exist_ok=True)
     pred_path = out_dir / f"{split_name}_pred.parquet"
@@ -214,6 +255,7 @@ def attach_labels(
     split: ProcessedSplit,
     label_col: str,
     raw_return_col: str,
+    extra_label_cols: list[str] | None = None,
 ) -> pd.DataFrame:
     import pyarrow.dataset as ds
 
@@ -221,9 +263,13 @@ def attach_labels(
     key_trade, key_code = pcfg.key_cols
     l_path = proc / pcfg.labels_path
     date_filter = (ds.field(key_trade) >= split.start_date) & (ds.field(key_trade) <= split.end_date)
+    label_cols = [key_trade, key_code, label_col, raw_return_col]
+    for col in extra_label_cols or []:
+        if col not in label_cols:
+            label_cols.append(col)
     labels = (
         ds.dataset(str(l_path), format="parquet")
-        .to_table(columns=[key_trade, key_code, label_col, raw_return_col], filter=date_filter)
+        .to_table(columns=label_cols, filter=date_filter)
         .to_pandas()
     )
     labels[key_trade] = labels[key_trade].astype(str)
@@ -339,6 +385,7 @@ def backtest_topk(pred_df: pd.DataFrame, return_col: str, cfg: BacktestConfig) -
     annual_return = float(curve_df["equity"].iloc[-1] ** (1.0 / years) - 1.0)
     return {
         "bt_periods": periods,
+        "bt_mode": "topk",
         "bt_step_days": int(cfg.step_days),
         "bt_n_hold": int(cfg.n_hold),
         "bt_k_rotate": int(cfg.k_rotate),
@@ -348,6 +395,110 @@ def backtest_topk(pred_df: pd.DataFrame, return_col: str, cfg: BacktestConfig) -
         "bt_sharpe": sharpe_ratio(curve_df["net_ret"].to_numpy(dtype=np.float64), cfg.trading_days_per_year / cfg.step_days),
         "bt_max_drawdown": max_drawdown(curve_df["equity"].to_numpy(dtype=np.float64)),
         "bt_avg_turnover": float(curve_df["turnover"].mean()),
+    }
+
+
+def backtest_rolling_tranche(pred_df: pd.DataFrame, cfg: BacktestConfig) -> dict:
+    return_col = str(cfg.daily_return_col)
+    if pred_df.empty or return_col not in pred_df.columns:
+        return {
+            "bt_periods": 0,
+            "bt_mode": "rolling_tranche",
+            "bt_total_return": math.nan,
+            "bt_annual_return": math.nan,
+            "bt_sharpe": math.nan,
+            "bt_max_drawdown": math.nan,
+            "bt_avg_turnover": math.nan,
+        }
+
+    df = pred_df[["trade_date", "ts_code", "pred", return_col]].dropna().copy()
+    df["trade_date"] = df["trade_date"].astype(str)
+    df["ts_code"] = df["ts_code"].astype(str)
+    dates = sorted(df["trade_date"].unique().tolist())
+    day_map = {d: g.set_index("ts_code") for d, g in df.groupby("trade_date", sort=False)}
+
+    active: list[dict[str, object]] = []
+    equity = 1.0
+    curve = []
+    tranche_size = max(1, int(cfg.tranche_size))
+    hold_days = max(1, int(cfg.hold_days))
+    target_active = tranche_size * hold_days
+
+    for d in dates:
+        day = day_map.get(d)
+        if day is None or day.empty:
+            continue
+
+        expired_codes: list[str] = []
+        next_active: list[dict[str, object]] = []
+        for tr in active:
+            if int(tr["days_left"]) <= 0:
+                expired_codes.extend(list(tr["codes"]))
+            else:
+                next_active.append(tr)
+        active = next_active
+
+        held_after_expiry = {code for tr in active for code in list(tr["codes"])}
+        ranked = day.sort_values("pred", ascending=False, kind="mergesort")
+        buy_list = ranked[~ranked.index.isin(held_after_expiry)].head(tranche_size).index.astype(str).tolist()
+        if buy_list:
+            active.append({"codes": buy_list, "days_left": hold_days})
+
+        active_codes: list[str] = []
+        for tr in active:
+            active_codes.extend(list(tr["codes"]))
+        held_ret = day.loc[day.index.intersection(active_codes), return_col]
+        gross_ret = float(held_ret.mean()) if len(held_ret) else 0.0
+
+        buys = len(buy_list)
+        sells = len(expired_codes)
+        turnover = float((buys + sells) / max(1, target_active))
+        net_ret = gross_ret - turnover * cfg.transaction_cost_bps / 10000.0
+        equity *= 1.0 + net_ret
+        for tr in active:
+            tr["days_left"] = int(tr["days_left"]) - 1
+        curve.append(
+            {
+                "trade_date": d,
+                "net_ret": net_ret,
+                "gross_ret": gross_ret,
+                "turnover": turnover,
+                "active_positions": int(sum(len(list(tr["codes"])) for tr in active)),
+                "equity": equity,
+            }
+        )
+
+    curve_df = pd.DataFrame(curve)
+    if curve_df.empty:
+        return {
+            "bt_periods": 0,
+            "bt_mode": "rolling_tranche",
+            "bt_total_return": math.nan,
+            "bt_annual_return": math.nan,
+            "bt_sharpe": math.nan,
+            "bt_max_drawdown": math.nan,
+            "bt_avg_turnover": math.nan,
+        }
+
+    periods = int(len(curve_df))
+    years = max(1e-12, periods / float(cfg.trading_days_per_year))
+    total_return = float(curve_df["equity"].iloc[-1] - 1.0)
+    annual_return = float(curve_df["equity"].iloc[-1] ** (1.0 / years) - 1.0)
+    return {
+        "bt_periods": periods,
+        "bt_mode": "rolling_tranche",
+        "bt_step_days": 1,
+        "bt_tranche_size": tranche_size,
+        "bt_hold_days": hold_days,
+        "bt_target_active": target_active,
+        "bt_daily_return_col": return_col,
+        "bt_transaction_cost_bps": float(cfg.transaction_cost_bps),
+        "bt_total_return": total_return,
+        "bt_annual_return": annual_return,
+        "bt_sharpe": sharpe_ratio(curve_df["net_ret"].to_numpy(dtype=np.float64), cfg.trading_days_per_year),
+        "bt_max_drawdown": max_drawdown(curve_df["equity"].to_numpy(dtype=np.float64)),
+        "bt_avg_turnover": float(curve_df["turnover"].mean()),
+        "bt_avg_active_positions": float(curve_df["active_positions"].mean()),
     }
 
 
@@ -424,7 +575,7 @@ def predict_split_no_label(
 def run_experiment(exp_key: str, config_path: str, out_root: Path, stages: Iterable[str], device: str | None) -> dict:
     cfg = read_yaml(config_path)
     name = EXPERIMENTS.get(exp_key, {}).get("name", Path(config_path).stem)
-    raw_return_col = EXPERIMENTS.get(exp_key, {}).get("raw_return_col", "label_5d")
+    raw_return_col = cfg.get("backtest", {}).get("return_col", EXPERIMENTS.get(exp_key, {}).get("raw_return_col", "label_5d"))
     out_dir = out_root / name
     out_dir.mkdir(parents=True, exist_ok=True)
 

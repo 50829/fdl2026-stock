@@ -9,11 +9,11 @@
 - `src/models/sdd/run_e0_e1.py`：统一跑 E0/E1 的训练、验证/测试预测、IC/ICIR、Top-N 回测。
 - `src/models/sdd/run_ablation.py`：用于 GRU/TCN 的消融实验，支持 early stopping、best checkpoint、特征组选择和不同 loss。
 - `src/data/processed.py`：增加 `cache_in_memory` 路径，避免每个 epoch 反复按日期扫描 parquet；序列样本使用 `sliding_window_view` 批量构造。
-- `src/models/lrk/alstm.py`：为 ALSTM/GRU 增加 `use_attention` 开关，用于比较 attention 和 no-attention。
+- `src/models/lrk/alstm.py`：为 ALSTM/GRU 增加 `use_attention`、`input_layernorm`、`hidden_layernorm` 开关，用于比较 attention 和 LayerNorm 变体。
 - `src/models/lrk/tcn.py`：新增 TCN 模型，包含 causal dilated convolution、residual block 和可选 temporal attention pooling。
 - `src/models/__init__.py`、`src/train.py`、`src/predict.py`：接入 TCN，并让训练/预测识别 TCN 为 sequence model。
 
-注意：当前 `ALSTM`/GRU 还没有加入 LayerNorm。结构为：
+当前基础 `ALSTM`/GRU 结构为：
 
 ```text
 feature_proj: Linear -> Tanh
@@ -22,7 +22,12 @@ optional temporal attention
 Linear head
 ```
 
-因此后续仍可以尝试 `LayerNorm(input)` 或 `LayerNorm(hidden)`，这属于未完成的改进方向。
+LayerNorm 变体支持：
+
+```text
+input_layernorm=true: LayerNorm(input features) -> feature_proj
+hidden_layernorm=true: GRU -> LayerNorm(hidden states) -> attention/head
+```
 
 ## 数据与评估口径
 
@@ -162,6 +167,35 @@ pilot valid 结果：
 - ICIR 看，lookback=60 与 30 接近，但 60 仍略高。
 - 当前不建议把 20/30 扩到全量。
 
+## LayerNorm 对照
+
+模型固定为：
+
+```text
+layer1 GRU
+hidden=128
+lookback=60
+112 features
+attention=true
+loss=SmoothL1
+```
+
+pilot valid 结果：
+
+| 实验 | input LN | hidden LN | best epoch | valid loss | MSE | IC | ICIR | 回测收益 | Sharpe | 最大回撤 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| layer1 | no | no | 1 | 0.162710 | 0.328197 | 0.092944 | 0.468959 | 0.480024 | 0.922782 | -0.380244 |
+| layer1_input_layernorm | yes | no | 1 | 0.162855 | 0.329607 | 0.087430 | 0.447927 | 0.566943 | 1.034457 | -0.387209 |
+| layer1_hidden_layernorm | no | yes | 3 | 0.165485 | 0.332257 | 0.070258 | 0.451512 | 0.453018 | 1.430329 | -0.114050 |
+| layer1_input_hidden_layernorm | yes | yes | 4 | 0.166509 | 0.336350 | 0.065219 | 0.426890 | 0.436998 | 0.927140 | -0.354793 |
+
+结论：
+
+- 以 IC/ICIR 为主，三种 LayerNorm 变体都没有超过 `layer1` 基线。
+- `input_layernorm` 的回测收益更高，但 IC 和 ICIR 都下降，不适合作为主模型。
+- `hidden_layernorm` 和组合 LayerNorm 训练轮数更多，但 IC 明显下降，说明它没有解决当前问题，反而可能压弱截面排序信号。
+- 不建议把 LayerNorm 变体扩到全量。
+
 ## TCN 实验
 
 新增 TCN 模型：
@@ -208,11 +242,9 @@ layer1 GRU + 112 features + lookback=60 + attention + SmoothL1 + early stopping
 
 后续最值得尝试的方向：
 
-1. 在 GRU 中加入 LayerNorm：
-   - `LayerNorm(input features)` 后再进入 `feature_proj`。
-   - 或对 GRU 输出 `h` 做 `LayerNorm(hidden)` 再 attention/head。
-2. 做按日期构造 batch 的 daily CorrLoss，使训练目标更贴近 IC。
-3. 做 LightGBM baseline 和 LightGBM/GRU rank ensemble。
-4. 用 LightGBM importance 做 Top-K 特征选择，再训练 GRU，替代当前手工 core feature subset。
+1. 做按日期构造 batch 的 daily CorrLoss，使训练目标更贴近 IC。
+2. 做 LightGBM baseline 和 LightGBM/GRU rank ensemble。
+3. 用 LightGBM importance 做 Top-K 特征选择，再训练 GRU，替代当前手工 core feature subset。
+4. 如果继续做 GRU，只建议围绕当前 `layer1` 做很小范围 regularization 对照，例如 dropout/weight decay，不建议继续扩大结构搜索。
 
-暂不建议继续扩大 TCN 搜索，除非先重构 TCN 输入归一化或 batch 组织方式。
+暂不建议继续扩大 TCN 或 LayerNorm 搜索，除非先重构输入归一化、batch 组织方式或损失函数。

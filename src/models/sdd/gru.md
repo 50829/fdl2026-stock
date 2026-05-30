@@ -375,3 +375,47 @@ output:
 - 训练、验证、测试严格按时间切分。
 - GRU 用于捕捉单只股票的时间动态，attention 用于学习不同历史交易日的重要性。
 - 最终以 IC 和模拟交易指标评价模型，而不是只看 loss。
+
+# 下一步实验
+1. 先做 GRU + LayerNorm 对照实验
+    当前最好的模型是 layer1 + attention + SmoothL1 +
+    lookback=60，但还没加 LayerNorm。
+    我会加几组最小改动实验：
+  - layer1_baseline：当前最优 GRU，不变
+  - layer1_input_layernorm：对输入特征做 LayerNorm
+  - layer1_hidden_layernorm：对 GRU 输出 hidden 做
+    LayerNorm
+  - layer1_input_hidden_layernorm：输入和 hidden 都
+    做 LayerNorm
+
+    先跑 pilot，看 IC/ICIR 趋势；如果提升稳定，再全量
+    训练。
+2. 保持实验变量干净
+    这次只改 LayerNorm，不同时改 loss、lookback、
+    feature set。否则看不清楚到底是谁带来的变化。
+3. 指标主要看 IC / ICIR
+    排序优先级我建议是：
+  - 第一优先：valid/test IC
+  - 第二优先：valid/test ICIR
+  - 第三优先：MSE
+  - 第四优先：当前 Top-N 回测
+
+    因为现在回测策略比较简单，不能直接代表模型真实上
+    限。
+4. 如果 LayerNorm 有提升，再做全量
+    不是 pilot 最好就直接信，而是看它是不是：
+    - IC 提升
+    - ICIR 不下降
+    - valid 和 test 方向一致
+    - 没有明显只靠某一年表现拉高
+5. LayerNorm 后再考虑两个方向
+    如果 LayerNorm 有用：继续做 GRU 稳定性改进，比如
+    dropout、weight decay、hidden size 小范围调参。
+    如果 LayerNorm 没用：转向 LightGBM/融合方案，先做
+    一个传统强 baseline，再考虑神经网络输出作为额外特
+    征。
+
+我下一步具体会先改 src/models/lrk/alstm.py，给当前
+GRU/ALSTM 增加可配置的 LayerNorm，然后在 src/models/
+sdd/run_ablation.py 里加这几组实验，跑 pilot 并生成对
+照表。
