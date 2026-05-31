@@ -25,6 +25,32 @@ def build_strategy_grid(cost_bps: float = 5.0) -> list[tuple[str, StrategyBackte
             )
         )
 
+    base = StrategyBacktestConfig(strategy="defensive_rank_buffer", transaction_cost_bps=cost_bps)
+    for target, buy, sell, min_size, min_amt, max_vol, stress_exp in [
+        (20, 60, 180, -0.35, -0.35, 0.70, 0.55),
+        (20, 80, 220, -0.20, -0.20, 0.60, 0.50),
+        (30, 100, 260, -0.20, -0.20, 0.65, 0.60),
+    ]:
+        rows.append(
+            (
+                f"defensive_p{target}_b{buy}_s{sell}_size{int(min_size * 100)}_amt{int(min_amt * 100)}",
+                replace(
+                    base,
+                    target_positions=target,
+                    buy_rank=buy,
+                    sell_rank=sell,
+                    min_hold_days=3,
+                    max_hold_days=15,
+                    max_stock_updates=4,
+                    min_size_rank=min_size,
+                    min_amount_rank=min_amt,
+                    max_volatility_rank=max_vol,
+                    stress_gross_exposure=stress_exp,
+                    max_position_weight=0.08 if target == 20 else 0.06,
+                ),
+            )
+        )
+
     rows.append(
         (
             "risk_tail_core30_tail70",

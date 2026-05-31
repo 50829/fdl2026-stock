@@ -27,6 +27,25 @@ def load_prediction_data(path: str | Path, score_col: str = "pred", return_col: 
     return out.sort_values(["trade_date", score_col], ascending=[True, False], kind="mergesort").reset_index(drop=True)
 
 
+def merge_feature_columns(
+    df: pd.DataFrame,
+    feature_path: str | Path,
+    columns: list[str],
+) -> pd.DataFrame:
+    path = Path(feature_path)
+    if not path.exists() or not columns:
+        return df
+    required = ["trade_date", "ts_code"]
+    features = pd.read_parquet(path, columns=required + columns)
+    features["trade_date"] = features["trade_date"].astype(str)
+    features["ts_code"] = features["ts_code"].astype(str)
+    out = df.merge(features, on=["trade_date", "ts_code"], how="left")
+    for col in columns:
+        if col in out.columns:
+            out[col] = out[col].astype("float32")
+    return out
+
+
 def prepare_maps(df: pd.DataFrame, cfg: StrategyBacktestConfig) -> tuple[list[str], dict[str, pd.DataFrame], pd.DataFrame]:
     dates = sorted(df["trade_date"].unique().tolist())
     day_map: dict[str, pd.DataFrame] = {}

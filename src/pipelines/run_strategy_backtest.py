@@ -16,6 +16,7 @@ from src.strategy import (
     build_strategy_grid,
     load_prediction_data,
     load_price_benchmark,
+    merge_feature_columns,
     run_strategy,
     write_strategy_outputs,
     write_split_plots,
@@ -32,6 +33,14 @@ DEFAULT_PREDS = {
         "test": "outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet",
     },
 }
+
+
+FEATURE_COLUMNS = [
+    "log_total_mv__cs_rank",
+    "log_amount__cs_rank",
+    "volatility_20__cs_rank",
+    "turnover_rate__cs_rank",
+]
 
 
 def _timestamped_out_root(base: str, run_name: str, no_timestamp: bool) -> Path:
@@ -124,6 +133,8 @@ def run_cli() -> None:
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     parser.add_argument("--score-col", default="pred")
     parser.add_argument("--return-col", default="label_1d")
+    parser.add_argument("--feature-path", default="data/processed/features.parquet")
+    parser.add_argument("--no-feature-merge", action="store_true")
     parser.add_argument("--benchmark-path", default=None, help="Optional CSV/parquet index benchmark with trade_date and close/equity/return.")
     parser.add_argument("--benchmark-name", default="benchmark_index")
     parser.add_argument("--index-weight-path", default="data/raw/index_weight.zip")
@@ -143,6 +154,7 @@ def run_cli() -> None:
         "transaction_cost_bps": float(args.transaction_cost_bps),
         "score_col": args.score_col,
         "return_col": args.return_col,
+        "feature_path": None if args.no_feature_merge else args.feature_path,
         "plot_scale": "linear" if args.linear_scale else "log",
         "benchmark_path": args.benchmark_path,
         "index_weight_path": args.index_weight_path,
@@ -170,6 +182,8 @@ def run_cli() -> None:
             pred_path = DEFAULT_PREDS[model_name][split]
             print(json.dumps({"stage": "load", "model": model_name, "split": split, "path": pred_path}, ensure_ascii=False), flush=True)
             df = load_prediction_data(pred_path, score_col=args.score_col, return_col=args.return_col)
+            if not args.no_feature_merge:
+                df = merge_feature_columns(df, args.feature_path, FEATURE_COLUMNS)
             split_rows: list[dict[str, Any]] = []
             curves: dict[str, pd.DataFrame] = {}
             benchmark_rows: list[dict[str, Any]] = []

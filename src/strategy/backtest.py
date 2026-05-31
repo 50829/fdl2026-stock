@@ -8,7 +8,7 @@ from .benchmarks import (
     load_price_benchmark,
 )
 from .config import StrategyBacktestConfig
-from .data import load_prediction_data, prepare_maps
+from .data import load_prediction_data, merge_feature_columns, prepare_maps
 from .engine import run_strategy, target_holdings
 from .grid import build_strategy_grid
 from .io import write_strategy_outputs
@@ -23,6 +23,7 @@ __all__ = [
     "build_strategy_grid",
     "load_index_weight_data",
     "load_prediction_data",
+    "merge_feature_columns",
     "load_price_benchmark",
     "max_drawdown",
     "metrics_from_curve",

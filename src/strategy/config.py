@@ -29,3 +29,9 @@ class StrategyBacktestConfig:
     risk_keep_count: int = 80
     volatility_penalty: float = 0.35
     max_position_weight: float = 0.08
+    min_size_rank: float = -0.35
+    min_amount_rank: float = -0.35
+    max_volatility_rank: float = 0.70
+    market_window: int = 5
+    market_stress_threshold: float = -0.08
+    stress_gross_exposure: float = 0.55

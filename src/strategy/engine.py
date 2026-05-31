@@ -8,7 +8,7 @@ import pandas as pd
 from .config import StrategyBacktestConfig
 from .data import prepare_maps
 from .metrics import metrics_from_curve
-from .strategies import rank_buffer, risk_balanced_tail, risk_budget_rank_buffer, risk_filtered_rank_buffer, rolling_tranche, topk_drop
+from .strategies import defensive_rank_buffer, rank_buffer, risk_balanced_tail, risk_budget_rank_buffer, risk_filtered_rank_buffer, rolling_tranche, topk_drop
 from .utils import equal_weights, turnover
 
 
@@ -28,6 +28,8 @@ def target_holdings(
     if cfg.strategy == "rank_buffer":
         next_holdings, trades = rank_buffer(holdings, day, cfg)
         return next_holdings, equal_weights(sorted(next_holdings)), trades
+    if cfg.strategy == "defensive_rank_buffer":
+        return defensive_rank_buffer(holdings, day, ret_panel, date, cfg)
     if cfg.strategy == "risk_balanced_tail":
         return risk_balanced_tail(holdings, day, ret_panel, date, cfg)
     if cfg.strategy == "risk_filtered_rank_buffer":
