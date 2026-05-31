@@ -63,16 +63,27 @@ python -m src.pipelines.run_strategy_backtest \
 
 ## 2. 代码结构统一
 
-策略核心逻辑集中在：
+策略代码已拆分，`backtest.py` 只保留兼容导出，不再承载所有实现：
 
 ```text
-src/strategy/backtest.py
+src/strategy/backtest.py        # 兼容导出层
+src/strategy/config.py          # 策略参数 dataclass
+src/strategy/data.py            # 预测数据读取和日度面板准备
+src/strategy/engine.py          # 通用回测撮合、收益、换手、持仓输出
+src/strategy/benchmarks.py      # 等权、指数权重、外部点位基线
+src/strategy/plotting.py        # SVG 回测图
+src/strategy/grid.py            # 策略参数网格
+src/strategy/io.py              # 输出文件写入
 ```
 
-统一导出入口：
+每个策略单独一个文件：
 
 ```text
-src/strategy/__init__.py
+src/strategy/strategies/rolling_tranche.py
+src/strategy/strategies/topk_drop.py
+src/strategy/strategies/rank_buffer.py
+src/strategy/strategies/risk_balanced_tail.py
+src/strategy/strategies/risk_filtered_rank_buffer.py
 ```
 
 批量实验入口：
@@ -114,31 +125,34 @@ summary.json
 strategy_report.md
 ```
 
-本轮统一回测输出目录：
+回测输出目录默认带时间戳，避免覆盖旧实验：
 
 ```text
-outputs/strategy/unified_final/
+outputs/strategy/strategy_backtest_YYYYMMDD_HHMMSS/
 ```
 
-关键结果文件：
+可以用 `--run-name` 改变时间戳目录前缀；只有显式传 `--no-timestamp` 时才会直接写入 `--out-root`。
+
+本轮重跑结果目录：
 
 ```text
-outputs/strategy/unified_final/strategy_report.md
-outputs/strategy/unified_final/final/valid/strategy_metrics.csv
-outputs/strategy/unified_final/final/test/strategy_metrics.csv
-outputs/strategy/unified_final/final/valid/equity_comparison.svg
-outputs/strategy/unified_final/final/test/equity_comparison.svg
+outputs/strategy/unified_final_20260601_001207/strategy_report.md
+outputs/strategy/unified_final_20260601_001207/final/valid/strategy_metrics.csv
+outputs/strategy/unified_final_20260601_001207/final/test/strategy_metrics.csv
+outputs/strategy/unified_final_20260601_001207/final/valid/equity_comparison.svg
+outputs/strategy/unified_final_20260601_001207/final/test/equity_comparison.svg
 ```
 
 ## 4. 图形逻辑
 
-`equity_comparison.svg` 默认使用对数净值标度：
+`equity_comparison.svg` 默认使用明确的 log10 净值标度。SVG 里会写入：
 
 ```text
-y-scale: log equity
+y-axis: log10 equity
+Equity (log10 scale)
 ```
 
-这样不同收益倍率的策略可以在同一张图上更容易比较复利增长斜率和回撤形态。若需要线性净值图，可加：
+纵轴坐标按 `log10(equity)` 映射；等距的纵向间隔表示相同的收益倍数，而不是相同的净值差值。若需要线性净值图，可加：
 
 ```bash
 --linear-scale
@@ -157,7 +171,8 @@ benchmark_equal_weight_universe
 python -m src.pipelines.run_strategy_backtest \
   --models final \
   --splits valid test \
-  --out-root outputs/strategy/unified_final \
+  --out-root outputs/strategy \
+  --run-name unified_final \
   --transaction-cost-bps 5 \
   --index-code 000300.SH
 ```
@@ -204,3 +219,68 @@ rolling_p10_h5
 ```
 
 如果要求持仓更分散，20 股版本中可继续重点看 `topk20_drop3`、`risk_filtered_rank_buffer` 和 `rank_buffer` 的折中表现。
+
+## 7. 拆分图与风险预算策略更新
+
+本轮进一步改进画图逻辑，不再只输出一张全策略大图。每个 split 现在输出：
+
+```text
+equity_overview.svg
+equity_top_valid_sharpe.svg
+equity_all_debug.svg
+plots_by_family/rolling_tranche.svg
+plots_by_family/topk_drop.svg
+plots_by_family/rank_buffer.svg
+plots_by_family/risk_balanced_tail.svg
+plots_by_family/risk_filtered_rank_buffer.svg
+plots_by_family/risk_budget_rank_buffer.svg
+```
+
+报告主文档只引用 overview、top valid Sharpe 和 all debug。全量图保留为调试图，按 family 拆分的图用于看同一类策略的参数差异。
+
+本轮新增策略：
+
+```text
+risk_budget_rank_buffer
+```
+
+逻辑：
+
+1. 仍以模型 `pred` 为主要 alpha 信号。
+2. 只用当前日期以前的 `label_1d` 计算历史波动率。
+3. 候选排序使用 `alpha_rank - volatility_penalty * volatility_rank`。
+4. 保留 rank buffer 卖出逻辑，限制每日最大更新数量。
+5. 持仓权重使用 inverse-vol，并设置单票权重上限。
+
+本轮完整回测命令：
+
+```bash
+python -m src.pipelines.run_strategy_backtest \
+  --models final \
+  --splits valid test \
+  --out-root outputs/strategy \
+  --run-name risk_budget_plot_refactor \
+  --transaction-cost-bps 5 \
+  --index-code 000300.SH
+```
+
+输出目录：
+
+```text
+outputs/strategy/risk_budget_plot_refactor_20260601_003245/
+```
+
+风险预算策略结果：
+
+| split | 策略 | total_return | Sharpe | max_drawdown | avg_turnover |
+| --- | --- | ---: | ---: | ---: | ---: |
+| valid | `riskbudget_p20_top150_keep80_b40_s120_pen25` | 0.8769 | 1.8754 | -0.4302 | 0.5959 |
+| valid | `riskbudget_p20_top200_keep100_b50_s150_pen35` | 0.6462 | 1.6134 | -0.3938 | 0.4576 |
+| valid | `riskbudget_p30_top200_keep120_b60_s180_pen35` | 0.5662 | 1.4590 | -0.3969 | 0.4346 |
+| test | `riskbudget_p20_top150_keep80_b40_s120_pen25` | 1.6292 | 4.0447 | -0.0977 | 0.5377 |
+| test | `riskbudget_p20_top200_keep100_b50_s150_pen35` | 1.0565 | 3.2692 | -0.0855 | 0.4144 |
+| test | `riskbudget_p30_top200_keep120_b60_s180_pen35` | 1.0281 | 3.2104 | -0.0819 | 0.4064 |
+
+结论：
+
+风险预算策略确实能降低部分配置的换手和 test 回撤，但收益和 Sharpe 明显低于当前最强的纯 alpha/缓冲策略。它适合作为“风险更保守”的候选，不适合作为当前主推策略。下一步如果继续优化，应把目标从单纯 inverse-vol 改为 alpha、波动、回撤和相对 000300 暴露的多目标打分，而不是只惩罚低波动。

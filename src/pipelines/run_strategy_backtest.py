@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +16,9 @@ from src.strategy import (
     build_strategy_grid,
     load_prediction_data,
     load_price_benchmark,
-    plot_comparison,
     run_strategy,
     write_strategy_outputs,
+    write_split_plots,
 )
 
 
@@ -31,6 +32,14 @@ DEFAULT_PREDS = {
         "test": "outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet",
     },
 }
+
+
+def _timestamped_out_root(base: str, run_name: str, no_timestamp: bool) -> Path:
+    base_path = Path(base)
+    if no_timestamp:
+        return base_path
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return base_path / f"{run_name}_{stamp}"
 
 
 def _select_best(valid_rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -75,7 +84,8 @@ def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[s
         "",
         "- Selection signal: model `pred` only.",
         "- Realized `label_1d` is used for ex-post returns and historical risk estimation.",
-        "- Equity comparison plots use log equity scale by default.",
+        "- Equity comparison plots use log10 equity scale by default.",
+        "- Main report uses split plots: overview, top valid Sharpe, plots by strategy family, and all-strategies debug.",
         f"- Benchmark: {benchmark_note}",
         "",
     ]
@@ -92,7 +102,9 @@ def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[s
                     f"### {split}",
                     "",
                     f"- Metrics CSV: `{split_info['metrics_csv']}`",
-                    f"- Equity plot: `{split_info['equity_plot']}`",
+                    f"- Overview plot: `{split_info['plots']['overview']}`",
+                    f"- Top valid Sharpe plot: `{split_info['plots']['top_valid_sharpe']}`",
+                    f"- All-strategies debug plot: `{split_info['plots']['all_debug']}`",
                     "",
                     _metric_table(rows, top_n=10),
                     "",
@@ -104,7 +116,9 @@ def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[s
 def run_cli() -> None:
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out-root", default="outputs/strategy/model_pred_strategies")
+    parser.add_argument("--out-root", default="outputs/strategy")
+    parser.add_argument("--run-name", default="strategy_backtest")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write directly to --out-root without creating a timestamped run folder.")
     parser.add_argument("--models", nargs="+", choices=sorted(DEFAULT_PREDS), default=["final", "lgb_top40"])
     parser.add_argument("--splits", nargs="+", choices=["valid", "test"], default=["valid", "test"])
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
@@ -119,10 +133,13 @@ def run_cli() -> None:
     parser.add_argument("--linear-scale", action="store_true", help="Use linear equity scale for comparison SVGs.")
     args = parser.parse_args()
 
-    out_root = Path(args.out_root)
+    out_root = _timestamped_out_root(args.out_root, args.run_name, args.no_timestamp)
     grid = build_strategy_grid(cost_bps=args.transaction_cost_bps)
     summary: dict[str, Any] = {
         "out_root": str(out_root),
+        "out_parent": args.out_root,
+        "run_name": args.run_name,
+        "timestamped": not args.no_timestamp,
         "transaction_cost_bps": float(args.transaction_cost_bps),
         "score_col": args.score_col,
         "return_col": args.return_col,
@@ -133,6 +150,7 @@ def run_cli() -> None:
         "models": {},
     }
     all_rows: list[dict[str, Any]] = []
+    valid_rows_by_model: dict[str, list[dict[str, Any]]] = {}
     benchmark_notes: list[str] = []
     if args.benchmark_path:
         benchmark_notes.append(f"external benchmark `{args.benchmark_name}` from `{args.benchmark_path}`")
@@ -211,13 +229,21 @@ def run_cli() -> None:
             split_dir = out_root / model_name / split
             split_dir.mkdir(parents=True, exist_ok=True)
             metrics_df.to_csv(split_dir / "strategy_metrics.csv", index=False)
-            plot_path = split_dir / "equity_comparison.svg"
-            plot_comparison(curves, plot_path, f"{model_name} {split} strategy equity", log_scale=not args.linear_scale)
+            if split == "valid":
+                valid_rows_by_model[model_name] = list(split_rows)
+            plot_paths = write_split_plots(
+                curves,
+                split_rows,
+                split_dir,
+                f"{model_name} {split} strategy equity",
+                log_scale=not args.linear_scale,
+                valid_rows=valid_rows_by_model.get(model_name),
+            )
             summary["models"][model_name][split] = {
                 "pred_path": pred_path,
                 "rows": int(len(df)),
                 "metrics_csv": str(split_dir / "strategy_metrics.csv"),
-                "equity_plot": str(plot_path),
+                "plots": plot_paths,
                 "best_by_valid_protocol": _select_best(split_rows) if split == "valid" else None,
             }
 
