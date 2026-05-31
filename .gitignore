@@ -1,15 +1,8 @@
 /data/
 /documents-export-*/
 
-outputs/*
-!outputs/.gitkeep
-!outputs/models/
-!outputs/models/.gitkeep
-!outputs/predictions/
-!outputs/predictions/.gitkeep
+outputs/**
 !outputs/figures/
-!outputs/figures/.gitkeep
-
 
 !**/.gitkeep
 !**/*.md
