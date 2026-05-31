@@ -1,8 +1,16 @@
 # FDL2026 Stock Trend Prediction
 
-深度学习基础大作业：基于 A 股日频数据的趋势预测与模拟交易。
+深度学习基础大作业：基于 A 股日频数据的趋势预测、模型融合与模拟交易评估。
 
 ## 环境配置
+
+推荐 Python 3.12。CPU 环境可直接安装：
+
+```bash
+pip install -r requirements.txt
+```
+
+如需 CUDA 版本 PyTorch，先按本机 CUDA 版本安装官方 wheel，再安装其余依赖：
 
 ```bash
 pip install -r requirements.txt
@@ -11,87 +19,101 @@ pip install -r requirements.txt
 ## 目录结构
 
 ```text
-configs/            # 统一配置
-data/raw/           # 原始数据，不提交
-data/processed/     # 预处理产物，不提交
-src/data/           # 数据读取、特征、标签、元数据校验
-src/models/         # 模型定义
-src/backtest/       # 指标、策略、回测
-tests/smoke_pipeline/ # 跑通流程用的临时 smoke pipeline
-tests/configs/      # smoke pipeline 配置
-notebooks/          # 探索分析
-outputs/            # 模型、预测、图表产出，不提交
-logs/               # 训练日志，不提交
-docs/dev/           # 开发日志
-docs/report/        # 实验报告与插图
-```
-
-## 小组分工
-
-- A：数据预处理、特征工程、标签构造、元数据校验
-- B：模型实现、训练流程、每日预测
-- C：指标评估、历史回测、结果可视化
-
-## 当前目标
-
-先跑通最小闭环：`raw csv -> processed parquet -> features/labels -> baseline model -> IC/backtest -> daily prediction`。
-
-## 环境安装
-
-使用 python 3.12 和 cuda 13.0
-
-```bash
-conda create -n fdl python=3.12
-conda activate fdl
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+configs/        # MLP/GRU 主实验配置
+data/           # 原始数据和 processed parquet，默认不提交
+src/data/       # 数据读取、特征、标签、缓存数据集
+src/models/     # 可复用模型定义
+src/models/sdd/ # 实验实现模块，不再作为推荐命令入口
+src/evaluation/ # IC/ICIR、TopK、rolling tranche 等统一评测逻辑
+src/backtest/   # 兼容旧导入路径的回测包装层
+src/pipelines/  # 可复现实验和交接产物生成实现
+outputs/        # 模型、预测、指标产物，默认不提交
+docs/           # 实验记录与报告
 ```
 
 ## 数据预处理
 
 ```bash
-conda run -n fdl python -m src.data.preprocess --config configs/config.yaml
+python -m src.experiments preprocess --config configs/config.yaml
 ```
 
-处理方案见 `docs/dev/data_preprocessing.md`，产物说明见 `data/processed/README.md`。
+主实验默认读取：
 
-## 主线训练与预测（使用 data/processed）
+- `data/processed/feature_meta.json`
+- `data/processed/splits.json`
+- `data/processed/features.parquet`
+- `data/processed/labels.parquet`
+- `data/processed/universe.parquet`
 
-训练：
+## 统一入口
+
+所有实验命令统一从 `src.experiments` 进入：
 
 ```bash
-python -m src.train --config configs/config.yaml
+python -m src.experiments --help
 ```
 
-预测（默认跑 test split 并输出到 `outputs/predictions/`）：
+## 基线模型
+
+MLP/GRU 主入口：
 
 ```bash
-python -m src.predict --config configs/config.yaml
+python -m src.experiments gru --experiments e0_full e1_full --stage train eval predict --out-root outputs/sdd
 ```
 
-`src.train`/`src.predict` 默认读取：
-
-- `data/processed/feature_meta.json` 获取特征列
-- `data/processed/splits.json` 获取 train/valid/test 日期切分
-- `data/processed/features.parquet`、`labels.parquet`、`universe.parquet` 作为输入
-
-## Smoke 流程测试
-
-远端合入的流程测试代码已收在 `tests/smoke_pipeline/`，避免和主线 `src/` 模块重名冲突。
+GRU 消融实验入口：
 
 ```bash
-python tests/smoke_pipeline/train.py --config tests/configs/smoke.yaml
-python tests/smoke_pipeline/eval.py --config tests/configs/smoke.yaml
+python -m src.experiments gru-ablation --processed-dir data/processed --out-root outputs/sdd_ablation_full
 ```
 
-Smoke pipeline 会把产物输出到 `outputs/smoke/`（默认）：
+## 树模型
 
-- `ckpt.pt`：checkpoint
-- `val_pred.csv`：逐样本预测与标签（可选）
-- `ic_by_day.csv`：逐日 IC 表（可选）
-- `eval_metrics.csv`：评估/回测汇总（可选）
-- `bt_curve.csv`：回测资金曲线（可选）
+LightGBM/XGBoost 训练、评测、预测统一入口：
 
-`eval.py` 终端输出也会打印：
+```bash
+python -m src.experiments gbdt --model lightgbm --processed-dir data/processed --out-root outputs/sdd_gbdt_full
+python -m src.experiments gbdt --model xgboost --processed-dir data/processed --out-root outputs/sdd_gbdt_full
+```
 
-- `val_mse/ic_mean/icir/ic_days/samples`
-- 回测开启时打印 `{"backtest": {...}}`
+使用已经筛好的 top40 特征：
+
+```bash
+python -m src.experiments gbdt --model lightgbm --processed-dir data/processed --feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt --out-root outputs/sdd_feature_selection/lightgbm_top40
+python -m src.experiments gbdt --model xgboost --processed-dir data/processed --feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt --out-root outputs/sdd_feature_selection/xgboost_top40
+```
+
+## 融合模型
+
+Residual-rank / stacking / leaf embedding 等融合实验入口：
+
+```bash
+python -m src.experiments fusion --processed-dir data/processed --out-root outputs/sdd_fusion_methods --experiments residual_rank --mlp-arch deep_ln --alpha-grid 0.0 0.25 0.5 0.75 1.0 1.5
+```
+
+最终交接模型使用 residual-rank deep_ln，默认 `alpha=1.5`。用已保存的 residual-rank MLP checkpoint 和 LightGBM/XGBoost top40 预测复现最终交接文件：
+
+```bash
+python -m src.experiments final-handoff --alpha 1.5 --out-root outputs/sdd_final_model_handoff
+```
+
+输出：
+
+- `outputs/sdd_final_model_handoff/valid/valid_pred.parquet`
+- `outputs/sdd_final_model_handoff/test/test_pred.parquet`
+- `outputs/sdd_final_model_handoff/summary.json`
+
+预测文件核心字段：
+
+- `pred` / `final_pred`：策略同学使用的最终排序分数
+- `pred_lgb`、`pred_xgb`：树模型基础分数
+- `residual_rank_pred`：深度网络预测的 residual-rank 修正项
+- `alpha`：修正项权重
+
+## 评测与回测
+
+统一评测函数位于 `src/evaluation/`，实验脚本不再各自维护一套 IC/回测实现。对已有预测文件做回测敏感性分析：
+
+```bash
+python -m src.experiments backtest-sensitivity --pred final valid outputs/sdd_final_model_handoff/valid/valid_pred.parquet --pred final test outputs/sdd_final_model_handoff/test/test_pred.parquet
+```

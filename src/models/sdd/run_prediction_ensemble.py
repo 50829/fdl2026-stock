@@ -8,19 +8,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.models.sdd.run_e0_e1 import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics, write_json
+from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics
+from src.evaluation import load_prediction_frame
+from src.utils import write_json
 
 
 def load_pred(path: str | Path, name: str) -> pd.DataFrame:
-    df = pd.read_parquet(path)
-    needed = {"trade_date", "ts_code", "pred"}
-    missing = needed - set(df.columns)
-    if missing:
-        raise ValueError(f"{path} missing columns: {sorted(missing)}")
-    out = df.copy()
-    out["trade_date"] = out["trade_date"].astype(str)
-    out["ts_code"] = out["ts_code"].astype(str)
-    return out.rename(columns={"pred": f"pred_{name}"})
+    return load_prediction_frame(path, pred_name=name)
 
 
 def rank_feature(df: pd.DataFrame, col: str) -> pd.Series:
@@ -121,7 +115,7 @@ def run_split(
     return result
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-root", default="outputs/sdd_ensemble_full")
     parser.add_argument("--label-col", default="label_5d__cs_rank")
@@ -160,7 +154,3 @@ def main() -> None:
         "test_best_by_icir": test.iloc[0].to_dict() if not test.empty else {},
     }
     write_json(out_root / "summary.json", summary)
-
-
-if __name__ == "__main__":
-    main()

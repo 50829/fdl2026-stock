@@ -15,37 +15,17 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.data import ProcessedConfig
+from src.evaluation import load_prediction_frame, prediction_frame
+from src.models.fusion import DeepMLP, META_INPUT_COLUMNS, merge_lgb_xgb_predictions, standardize
 from src.models.mlp import MLPModel
-from src.models.sdd.run_e0_e1 import write_json
 from src.models.sdd.run_gbdt import evaluate_predictions, load_tabular_frame, predict_model, train_lightgbm
 from src.models.sdd.run_gbdt_walkforward import resolve_features
 from src.train import set_seed
-
-
-class DeepMLP(nn.Module):
-    def __init__(self, in_dim: int, hidden: int = 128, dropout: float = 0.1):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(int(in_dim), int(hidden)),
-            nn.LayerNorm(int(hidden)),
-            nn.GELU(),
-            nn.Dropout(float(dropout)),
-            nn.Linear(int(hidden), int(hidden)),
-            nn.LayerNorm(int(hidden)),
-            nn.GELU(),
-            nn.Dropout(float(dropout)),
-            nn.Linear(int(hidden), 1),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).squeeze(-1)
+from src.utils import write_json
 
 
 def read_pred(path: str | Path, name: str) -> pd.DataFrame:
-    df = pd.read_parquet(path)
-    df["trade_date"] = df["trade_date"].astype(str)
-    df["ts_code"] = df["ts_code"].astype(str)
-    return df.rename(columns={"pred": f"pred_{name}"})
+    return load_prediction_frame(path, pred_name=name)
 
 
 def concat_oof(root: str, model: str, years: list[int], name: str) -> pd.DataFrame:
@@ -57,19 +37,13 @@ def concat_oof(root: str, model: str, years: list[int], name: str) -> pd.DataFra
 
 
 def merge_model_preds(lgb: pd.DataFrame, xgb: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
-    keep = ["trade_date", "ts_code", f"pred_lgb", args.target, args.raw_return_col, args.daily_return_col]
-    df = lgb[keep].merge(xgb[["trade_date", "ts_code", "pred_xgb"]], on=["trade_date", "ts_code"], how="inner")
-    df["rank_lgb"] = df.groupby("trade_date")["pred_lgb"].rank(method="average", pct=True)
-    df["rank_xgb"] = df.groupby("trade_date")["pred_xgb"].rank(method="average", pct=True)
-    df["pred_mean"] = 0.5 * (df["pred_lgb"] + df["pred_xgb"])
-    df["rank_mean"] = 0.5 * (df["rank_lgb"] + df["rank_xgb"])
-    df["pred_diff"] = df["pred_lgb"] - df["pred_xgb"]
-    df["rank_diff"] = df["rank_lgb"] - df["rank_xgb"]
+    label_cols = [args.target, args.raw_return_col, args.daily_return_col]
+    df = merge_lgb_xgb_predictions(lgb, xgb, label_cols=label_cols)
     return df.dropna(subset=[args.target]).reset_index(drop=True)
 
 
 def feature_cols_for_mlp(df: pd.DataFrame, args: argparse.Namespace) -> list[str]:
-    cols = ["pred_lgb", "pred_xgb", "rank_lgb", "rank_xgb", "pred_mean", "rank_mean", "pred_diff", "rank_diff"]
+    cols = list(META_INPUT_COLUMNS)
     cols.extend(getattr(args, "_fusion_raw_cols", []))
     return cols
 
@@ -80,9 +54,7 @@ def meta_features(df: pd.DataFrame, args: argparse.Namespace) -> np.ndarray:
 
 
 def pred_frame(df: pd.DataFrame, pred: np.ndarray, args: argparse.Namespace) -> pd.DataFrame:
-    out = df[["trade_date", "ts_code", args.target, args.raw_return_col, args.daily_return_col]].copy()
-    out["pred"] = pred.astype(np.float32, copy=False)
-    return out
+    return prediction_frame(df, pred, label_cols=[args.target, args.raw_return_col, args.daily_return_col])
 
 
 def eval_and_save(name: str, split: str, df: pd.DataFrame, pred: np.ndarray, args: argparse.Namespace, out_dir: Path) -> dict:
@@ -108,13 +80,6 @@ def run_ridge(train_df: pd.DataFrame, valid_df: pd.DataFrame, test_df: pd.DataFr
     }
     write_json(out_dir / "summary.json", summary)
     return summary
-
-
-def standardize(train_x: np.ndarray, *xs: np.ndarray):
-    mean = train_x.mean(axis=0, dtype=np.float64).astype(np.float32)
-    std = train_x.std(axis=0, dtype=np.float64).astype(np.float32)
-    std[std < 1e-6] = 1.0
-    return (train_x - mean) / std, [(x - mean) / std for x in xs], {"mean": mean.tolist(), "std": std.tolist()}
 
 
 def train_simple_mlp(
@@ -435,7 +400,7 @@ def run_leaf_embedding(args: argparse.Namespace, out_root: Path) -> dict:
     return summary
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--processed-dir", default="data/processed")
     parser.add_argument("--out-root", default="outputs/sdd_fusion_methods")
@@ -517,7 +482,3 @@ def main() -> None:
     if "leaf_embedding" in args.experiments:
         summaries["leaf_embedding"] = run_leaf_embedding(args, out_root)
     write_json(out_root / "summary.json", summaries)
-
-
-if __name__ == "__main__":
-    main()

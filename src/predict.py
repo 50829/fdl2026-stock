@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 
 import numpy as np
 import torch
-import yaml
 
 from src.data import (
     ProcessedConfig,
@@ -146,16 +144,3 @@ def predict(cfg: dict):
 
     writer.close()
     _pwrite(tqdm_mod, json.dumps({"saved_pred": out_path, "rows": n_rows}, ensure_ascii=False))
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--config", default="configs/config.yaml")
-    args = p.parse_args()
-    with open(args.config, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    predict(cfg)
-
-
-if __name__ == "__main__":
-    main()

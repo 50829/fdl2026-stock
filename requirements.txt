@@ -1,6 +1,4 @@
-python  = 3.12
-
-
+# Python 3.12 is recommended.
 pandas
 numpy
 pyarrow
@@ -9,3 +7,5 @@ torch
 tqdm
 pyyaml
 matplotlib
+lightgbm
+xgboost

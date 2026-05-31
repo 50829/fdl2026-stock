@@ -7,7 +7,8 @@ from pathlib import Path
 import pandas as pd
 
 from src.data import ProcessedConfig
-from src.models.sdd.run_e0_e1 import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics, write_json
+from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics
+from src.utils import write_json
 
 
 DEFAULT_PRED_PATHS = {
@@ -91,7 +92,7 @@ def evaluate_pred_file(
     return metrics
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--processed-dir", default="data/processed")
     parser.add_argument("--valid-pred", default=DEFAULT_PRED_PATHS["valid"])
@@ -131,7 +132,3 @@ def main() -> None:
         summaries[split] = metrics
         print(json.dumps({"split": split, "metrics": metrics}, ensure_ascii=False), flush=True)
     write_json(out_root / "summary.json", {"splits": summaries})
-
-
-if __name__ == "__main__":
-    main()

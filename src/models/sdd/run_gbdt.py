@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import time
 from pathlib import Path
 from typing import Iterable
@@ -11,7 +10,8 @@ import numpy as np
 import pandas as pd
 
 from src.data import ProcessedConfig, ProcessedSplit, build_processed_splits, load_feature_columns
-from src.models.sdd.run_e0_e1 import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics, write_json
+from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, prediction_metrics
+from src.utils import write_json
 
 
 def load_tabular_frame(
@@ -190,20 +190,7 @@ def feature_importance(model, model_name: str, feature_cols: list[str]) -> pd.Da
 
 
 def evaluate_predictions(pred_df: pd.DataFrame, label_col: str, args: argparse.Namespace) -> dict:
-    n = int(len(pred_df))
-    if n:
-        diff = pred_df["pred"].to_numpy(dtype=np.float64) - pred_df[label_col].to_numpy(dtype=np.float64)
-        mse = float(np.mean(diff * diff))
-    else:
-        mse = math.nan
-
-    metrics = {
-        "samples": n,
-        "mse": mse,
-        "label_col": label_col,
-        "raw_return_col": args.raw_return_col,
-    }
-    metrics.update(ic_metrics(pred_df, label_col=label_col))
+    metrics = prediction_metrics(pred_df, label_col=label_col, raw_return_col=args.raw_return_col)
 
     topk_cfg = BacktestConfig(
         mode="topk",
@@ -309,7 +296,7 @@ def run(args: argparse.Namespace) -> dict:
     return summary
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["lightgbm", "xgboost"], default="lightgbm")
     parser.add_argument("--processed-dir", default="data/processed_pilot")
@@ -345,7 +332,3 @@ def main() -> None:
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
     run(args)
-
-
-if __name__ == "__main__":
-    main()

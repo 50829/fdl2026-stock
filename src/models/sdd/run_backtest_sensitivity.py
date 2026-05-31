@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.models.sdd.run_e0_e1 import BacktestConfig, ic_metrics, max_drawdown, sharpe_ratio, write_json
+from src.evaluation import BacktestConfig, ic_metrics, max_drawdown, sharpe_ratio
+from src.utils import write_json
 
 
 def load_pred(path: str | Path, label_col: str, raw_return_col: str, daily_return_col: str) -> pd.DataFrame:
@@ -267,7 +268,7 @@ def run_one(name: str, split: str, path: str, out_root: Path, args: argparse.Nam
     return summary
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-root", default="outputs/sdd_gbdt_sensitivity")
     parser.add_argument("--label-col", default="label_5d__cs_rank")
@@ -300,7 +301,3 @@ def main() -> None:
     out_root = Path(args.out_root)
     summaries = [run_one(name, split, path, out_root, args) for name, split, path in args.pred]
     write_json(out_root / "summary.json", {"experiments": summaries})
-
-
-if __name__ == "__main__":
-    main()

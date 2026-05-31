@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 
 from src.data import ProcessedConfig, ProcessedSplit, load_feature_columns
-from src.models.sdd.run_e0_e1 import write_json
 from src.models.sdd.run_gbdt import (
     evaluate_predictions,
     feature_importance,
@@ -19,6 +18,7 @@ from src.models.sdd.run_gbdt import (
     train_lightgbm,
     train_xgboost,
 )
+from src.utils import write_json
 
 
 def resolve_features(pcfg: ProcessedConfig, feature_list: str | None) -> list[str]:
@@ -132,7 +132,7 @@ def run_fold(args: argparse.Namespace, pcfg: ProcessedConfig, feature_cols: list
     return summary
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["lightgbm", "xgboost"], default="lightgbm")
     parser.add_argument("--processed-dir", default="data/processed")
@@ -194,7 +194,3 @@ def main() -> None:
     )
     grouped.to_csv(out_root / "walkforward_by_scheme.csv", index=False)
     print(json.dumps({"by_scheme": grouped.to_dict(orient="records")}, ensure_ascii=False), flush=True)
-
-
-if __name__ == "__main__":
-    main()

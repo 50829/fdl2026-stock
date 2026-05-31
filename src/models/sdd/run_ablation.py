@@ -15,7 +15,8 @@ from src.data import ProcessedConfig, build_processed_splits, iter_processed_seq
 from src.data.feature_meta import read_feature_meta, resolve_feature_columns, read_parquet_feature_columns
 from src.models import build_model
 from src.train import set_seed
-from src.models.sdd.run_e0_e1 import evaluate_split, resolve_warmup_start, write_json
+from src.models.sdd.run_e0_e1 import evaluate_split, resolve_warmup_start
+from src.utils import write_json
 
 
 BASE_CFG = {
@@ -393,7 +394,7 @@ def run_feature_list_ablation(
     return summary
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiments", nargs="+", default=list(EXPERIMENTS), choices=sorted(EXPERIMENTS))
     parser.add_argument("--out-root", default="outputs/sdd_ablation")
@@ -420,7 +421,3 @@ def main() -> None:
     else:
         summaries = [run_ablation(exp, out_root, processed_dir=args.processed_dir, epochs=args.epochs) for exp in args.experiments]
     write_json(out_root / "summary.json", {"experiments": summaries})
-
-
-if __name__ == "__main__":
-    main()

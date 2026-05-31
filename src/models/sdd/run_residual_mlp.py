@@ -14,29 +14,12 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from src.data import ProcessedConfig, ProcessedSplit
 from src.models.mlp import MLPModel
-from src.models.sdd.run_e0_e1 import ic_metrics, write_json
+from src.evaluation import ic_metrics
+from src.models.fusion import DeepMLP, standardize
 from src.models.sdd.run_gbdt import evaluate_predictions, load_tabular_frame, predict_model, train_lightgbm
 from src.models.sdd.run_gbdt_walkforward import resolve_features, year_split
 from src.train import set_seed
-
-
-class DeepMLP(nn.Module):
-    def __init__(self, in_dim: int, hidden: int = 128, dropout: float = 0.1):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(int(in_dim), int(hidden)),
-            nn.LayerNorm(int(hidden)),
-            nn.GELU(),
-            nn.Dropout(float(dropout)),
-            nn.Linear(int(hidden), int(hidden)),
-            nn.LayerNorm(int(hidden)),
-            nn.GELU(),
-            nn.Dropout(float(dropout)),
-            nn.Linear(int(hidden), 1),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).squeeze(-1)
+from src.utils import write_json
 
 
 def split_range(name: str, start: str, end: str) -> ProcessedSplit:
@@ -80,18 +63,6 @@ def add_base_pred(df: pd.DataFrame, model, feature_cols: list[str], target_col: 
 def make_mlp_matrix(df: pd.DataFrame, mlp_feature_cols: list[str]) -> np.ndarray:
     cols = list(mlp_feature_cols) + ["base_pred"]
     return df[cols].to_numpy(dtype=np.float32, copy=False)
-
-
-def standardize(train_x: np.ndarray, *arrays: np.ndarray) -> tuple[np.ndarray, list[np.ndarray], dict[str, list[float]]]:
-    mean = train_x.mean(axis=0, dtype=np.float64).astype(np.float32)
-    std = train_x.std(axis=0, dtype=np.float64).astype(np.float32)
-    std[std < 1e-6] = 1.0
-    train_z = (train_x - mean) / std
-    out = [(x - mean) / std for x in arrays]
-    return train_z.astype(np.float32, copy=False), [x.astype(np.float32, copy=False) for x in out], {
-        "mean": mean.astype(float).tolist(),
-        "std": std.astype(float).tolist(),
-    }
 
 
 def predict_mlp(model: nn.Module, x: np.ndarray, batch_size: int, device: torch.device) -> np.ndarray:
@@ -336,7 +307,7 @@ def run_oof(
     return summary
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["frozen", "oof", "both"], default="both")
     parser.add_argument("--processed-dir", default="data/processed")
@@ -399,7 +370,3 @@ def main() -> None:
     if args.mode in {"oof", "both"}:
         summaries.append(run_oof(args, pcfg, data_feature_cols, base_feature_cols, mlp_feature_cols))
     write_json(Path(args.out_root) / "summary.json", {"experiments": summaries})
-
-
-if __name__ == "__main__":
-    main()

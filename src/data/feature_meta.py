@@ -134,7 +134,7 @@ def resolve_feature_columns(
     return [col for col in parquet_cols if col in selected]
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--meta", default="data/processed/feature_meta.json")
     parser.add_argument("--features", default="data/processed/features.parquet")
@@ -154,7 +154,3 @@ def main() -> None:
             ensure_ascii=False,
         )
     )
-
-
-if __name__ == "__main__":
-    main()

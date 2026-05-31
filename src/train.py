@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
-import yaml
 from torch import nn, optim
 
 from src.data import (
@@ -261,16 +259,3 @@ def train(cfg: dict):
                 break
 
     _pwrite(tqdm_mod, json.dumps({"saved": str(save_path), "best_epoch": best_epoch, "best_valid_loss": best_loss}, ensure_ascii=False))
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--config", default="configs/config.yaml")
-    args = p.parse_args()
-    with open(args.config, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    train(cfg)
-
-
-if __name__ == "__main__":
-    main()

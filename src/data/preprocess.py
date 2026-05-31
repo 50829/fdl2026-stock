@@ -1,7 +1,7 @@
 """Command line data preprocessing pipeline.
 
 Run:
-    python -m src.data.preprocess --config configs/config.yaml
+    python -m src.experiments preprocess --config configs/config.yaml
 """
 
 from __future__ import annotations
@@ -264,7 +264,7 @@ def filter_labels_to_universe(labels: pd.DataFrame, universe: pd.DataFrame, hori
 def write_processed_readme(processed_dir: Path, report: dict, config: dict, feature_count: int) -> None:
     text = f"""# Processed Data
 
-本目录由 `python -m src.data.preprocess --config configs/config.yaml` 生成。
+本目录由 `python -m src.experiments preprocess --config configs/config.yaml` 生成。
 
 ## 数据范围
 
@@ -301,7 +301,7 @@ def next_yyyymmdd(date_text: str) -> str:
     return (date + pd.Timedelta(days=1)).strftime("%Y%m%d")
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--end-date", default=None)
@@ -374,7 +374,3 @@ def main() -> None:
     }
     (processed_dir / "splits.json").write_text(json.dumps(splits, ensure_ascii=False, indent=2), encoding="utf-8")
     write_processed_readme(processed_dir, quality, config, len(feature_columns))
-
-
-if __name__ == "__main__":
-    main()
