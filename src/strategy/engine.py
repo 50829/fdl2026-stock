@@ -9,7 +9,7 @@ from .config import StrategyBacktestConfig
 from .data import prepare_maps
 from .metrics import metrics_from_curve
 from .strategies import defensive_rank_buffer, rank_buffer, risk_balanced_tail, risk_budget_rank_buffer, risk_filtered_rank_buffer, rolling_tranche, topk_drop
-from .utils import equal_weights, turnover
+from .utils import equal_weights, fixed_slot_weights, turnover
 
 
 def target_holdings(
@@ -21,7 +21,7 @@ def target_holdings(
 ) -> tuple[dict[str, int], dict[str, float], list[dict[str, Any]]]:
     if cfg.strategy == "rolling_tranche":
         next_holdings, trades = rolling_tranche(holdings, day, cfg)
-        return next_holdings, equal_weights(sorted(next_holdings)), trades
+        return next_holdings, fixed_slot_weights(sorted(next_holdings), cfg.target_positions), trades
     if cfg.strategy == "topk_drop":
         next_holdings, trades = topk_drop(holdings, day, cfg)
         return next_holdings, equal_weights(sorted(next_holdings)), trades

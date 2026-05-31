@@ -10,6 +10,13 @@ def equal_weights(codes: list[str]) -> dict[str, float]:
     return {c: w for c in codes}
 
 
+def fixed_slot_weights(codes: list[str], target_positions: int) -> dict[str, float]:
+    if not codes or target_positions <= 0:
+        return {}
+    w = 1.0 / int(target_positions)
+    return {c: w for c in codes}
+
+
 def score_weights(scores: pd.Series, total_weight: float) -> dict[str, float]:
     if scores.empty or total_weight <= 0:
         return {}
