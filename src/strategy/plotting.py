@@ -19,6 +19,13 @@ def _format_tick(value: float) -> str:
     return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
+def _date_text(value: object) -> str:
+    text = str(value)
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
+
+
 def _log_ticks(y_min_t: float, y_max_t: float) -> list[float]:
     lo = math.floor(y_min_t)
     hi = math.ceil(y_max_t)
@@ -34,13 +41,116 @@ def _log_ticks(y_min_t: float, y_max_t: float) -> list[float]:
     return [10.0 ** x for x in np.linspace(y_min_t, y_max_t, num=6)]
 
 
-def _style_for_name(name: str, idx: int, n: int) -> tuple[str, str]:
+FAMILY_ORDER = {
+    "benchmark": 0,
+    "rolling_tranche": 1,
+    "topk_drop": 2,
+    "rank_buffer": 3,
+    "defensive_rank_buffer": 4,
+    "risk_filtered_rank_buffer": 5,
+    "risk_budget_rank_buffer": 6,
+    "risk_balanced_tail": 7,
+}
+
+FAMILY_COLORS = {
+    "rolling_tranche": "#1F77B4",
+    "topk_drop": "#E66101",
+    "rank_buffer": "#1B9E77",
+    "defensive_rank_buffer": "#7F7F7F",
+    "risk_filtered_rank_buffer": "#7570B3",
+    "risk_budget_rank_buffer": "#D62728",
+    "risk_balanced_tail": "#8C564B",
+    "other": "#17BECF",
+}
+
+FAMILY_LABELS = {
+    "benchmark": "benchmarks",
+    "rolling_tranche": "rolling tranche",
+    "topk_drop": "top-k drop",
+    "rank_buffer": "rank buffer",
+    "defensive_rank_buffer": "defensive",
+    "risk_filtered_rank_buffer": "risk filtered",
+    "risk_budget_rank_buffer": "risk budget",
+    "risk_balanced_tail": "risk tail",
+    "other": "other",
+}
+
+FAMILY_DASHES = ["", "7,4", "2,3", "10,3,2,3", "1,4", "12,4,3,4"]
+VARIANT_SHADES = [0.0, -0.24, 0.26, -0.40, 0.42, -0.12, 0.14, -0.55, 0.58]
+
+
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    text = color.lstrip("#")
+    return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    return "#" + "".join(f"{max(0, min(255, c)):02X}" for c in rgb)
+
+
+def _mix(color: str, target: str, amount: float) -> str:
+    r, g, b = _hex_to_rgb(color)
+    tr, tg, tb = _hex_to_rgb(target)
+    mixed = (
+        round(r + (tr - r) * amount),
+        round(g + (tg - g) * amount),
+        round(b + (tb - b) * amount),
+    )
+    return _rgb_to_hex(mixed)
+
+
+def _family_variant_color(family: str, variant_idx: int) -> str:
+    base = FAMILY_COLORS.get(family, FAMILY_COLORS["other"])
+    shade = VARIANT_SHADES[variant_idx % len(VARIANT_SHADES)]
+    if variant_idx >= len(VARIANT_SHADES):
+        shade = shade * 0.7
+    if shade < 0:
+        return _mix(base, "#000000", abs(shade))
+    if shade > 0:
+        return _mix(base, "#FFFFFF", shade)
+    return base
+
+
+def _family_from_name(name: str) -> str:
+    if name.startswith("benchmark"):
+        return "benchmark"
+    prefixes = [
+        ("rolling_", "rolling_tranche"),
+        ("topk", "topk_drop"),
+        ("rankbuf_", "rank_buffer"),
+        ("defensive_", "defensive_rank_buffer"),
+        ("riskbuf_", "risk_filtered_rank_buffer"),
+        ("riskbudget_", "risk_budget_rank_buffer"),
+        ("risk_tail_", "risk_balanced_tail"),
+    ]
+    for prefix, family in prefixes:
+        if name.startswith(prefix):
+            return family
+    return "other"
+
+
+def _sort_curve_names(names: list[str]) -> list[str]:
+    return sorted(names, key=lambda n: (FAMILY_ORDER.get(_family_from_name(n), 99), n))
+
+
+def _group_curve_names(names: list[str]) -> list[tuple[str, list[str]]]:
+    ordered = _sort_curve_names(names)
+    groups: dict[str, list[str]] = {}
+    for name in ordered:
+        groups.setdefault(_family_from_name(name), []).append(name)
+    return sorted(groups.items(), key=lambda item: (FAMILY_ORDER.get(item[0], 99), item[0]))
+
+
+def _style_for_name(name: str, variant_idx: int) -> tuple[str, str, float, float]:
     if name == "benchmark_000300_sh_weight" or "000300" in name:
-        return "#111111", ""
+        return "#111111", "", 2.8, 1.0
     if name == "benchmark_equal_weight_universe":
-        return "#777777", "6,4"
-    hue = int((idx * 360 / max(1, n)) % 360)
-    return f"hsl({hue}, 72%, 38%)", ""
+        return "#666666", "8,4", 2.4, 0.95
+    family = _family_from_name(name)
+    color = _family_variant_color(family, variant_idx)
+    dash = FAMILY_DASHES[variant_idx % len(FAMILY_DASHES)]
+    stroke_width = 2.4 if variant_idx == 0 else 2.0
+    return color, dash, stroke_width, 0.94
 
 
 def _family_from_strategy(strategy: str) -> str:
@@ -57,11 +167,13 @@ def plot_comparison(curves: dict[str, pd.DataFrame], out_path: str | Path, title
         out.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>\n", encoding="utf-8")
         return
 
-    width, height = 1200, 680
-    left, right, top, bottom = 92, 260, 50, 78
+    grouped_names = _group_curve_names(list(series))
+    legend_rows = len(series) + len(grouped_names)
+    width, height = 1320, max(680, 132 + 22 * legend_rows)
+    left, right, top, bottom = 92, 330, 50, 78
     plot_w = width - left - right
     plot_h = height - top - bottom
-    all_dates = sorted({d for curve in series.values() for d in curve["trade_date"].astype(str).tolist()})
+    all_dates = sorted({_date_text(d) for curve in series.values() for d in curve["trade_date"].tolist()})
     date_to_x = {d: i for i, d in enumerate(all_dates)}
     y_values = [float(y) for curve in series.values() for y in curve["equity"].tolist()]
     y_min = min(y_values + [1.0])
@@ -83,7 +195,7 @@ def plot_comparison(curves: dict[str, pd.DataFrame], out_path: str | Path, title
     def sx(date: str) -> float:
         if len(all_dates) <= 1:
             return left
-        return left + date_to_x[str(date)] / (len(all_dates) - 1) * plot_w
+        return left + date_to_x[_date_text(date)] / (len(all_dates) - 1) * plot_w
 
     def transform_y(value: float) -> float:
         return math.log10(max(float(value), 1e-12)) if use_log else float(value)
@@ -110,14 +222,35 @@ def plot_comparison(curves: dict[str, pd.DataFrame], out_path: str | Path, title
     for idx in tick_idx:
         x = left + idx / max(1, len(all_dates) - 1) * plot_w
         parts.append(f"<text x='{x:.2f}' y='{top + plot_h + 24}' text-anchor='middle' font-size='11' font-family='Arial'>{all_dates[idx]}</text>")
-    for i, (name, curve) in enumerate(series.items()):
-        color, dash = _style_for_name(name, i, len(series))
-        points = " ".join(f"{sx(str(d)):.2f},{sy(float(e)):.2f}" for d, e in zip(curve["trade_date"], curve["equity"]))
-        dash_attr = f" stroke-dasharray='{dash}'" if dash else ""
-        parts.append(f"<polyline fill='none' stroke='{color}' stroke-width='1.8' points='{points}'{dash_attr}/>")
-        ly = top + 20 + i * 22
-        parts.append(f"<line x1='{left + plot_w + 25}' y1='{ly - 4}' x2='{left + plot_w + 55}' y2='{ly - 4}' stroke='{color}' stroke-width='2'{dash_attr}/>")
-        parts.append(f"<text x='{left + plot_w + 62}' y='{ly}' font-size='12' font-family='Arial'>{escape(name)}</text>")
+    legend_y = top + 18
+    for family, names in grouped_names:
+        header_color = FAMILY_COLORS.get(family, "#444444") if family != "benchmark" else "#222222"
+        parts.append(
+            f"<text x='{left + plot_w + 25}' y='{legend_y}' font-size='11' font-weight='700' "
+            f"font-family='Arial' fill='{header_color}'>{escape(FAMILY_LABELS.get(family, family))}</text>"
+        )
+        legend_y += 18
+        for variant_idx, name in enumerate(names):
+            curve = series[name]
+            color, dash, stroke_width, opacity = _style_for_name(name, variant_idx)
+            points = " ".join(f"{sx(d):.2f},{sy(float(e)):.2f}" for d, e in zip(curve["trade_date"], curve["equity"]))
+            dash_attr = f" stroke-dasharray='{dash}'" if dash else ""
+            parts.append(
+                f"<polyline fill='none' stroke='{color}' stroke-width='{stroke_width:.1f}' "
+                f"stroke-linejoin='round' stroke-linecap='round' opacity='{opacity:.2f}' points='{points}'{dash_attr}/>"
+            )
+            if not curve.empty:
+                last = curve.iloc[-1]
+                parts.append(
+                    f"<circle cx='{sx(last['trade_date']):.2f}' cy='{sy(float(last['equity'])):.2f}' "
+                    f"r='2.6' fill='{color}' opacity='{opacity:.2f}'/>"
+                )
+            parts.append(
+                f"<line x1='{left + plot_w + 25}' y1='{legend_y - 4}' x2='{left + plot_w + 58}' y2='{legend_y - 4}' "
+                f"stroke='{color}' stroke-width='{max(2.4, stroke_width):.1f}' stroke-linecap='round'{dash_attr}/>"
+            )
+            parts.append(f"<text x='{left + plot_w + 66}' y='{legend_y}' font-size='12' font-family='Arial'>{escape(name)}</text>")
+            legend_y += 22
     parts.append(f"<text x='{left + plot_w / 2}' y='{height - 18}' text-anchor='middle' font-size='13' font-family='Arial'>trade_date</text>")
     parts.append(f"<text x='18' y='{top + plot_h / 2}' transform='rotate(-90 18,{top + plot_h / 2})' text-anchor='middle' font-size='13' font-family='Arial'>{'Equity (log10 scale)' if use_log else 'Equity'}</text>")
     parts.append("</svg>")
