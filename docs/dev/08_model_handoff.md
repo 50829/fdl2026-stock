@@ -1,6 +1,6 @@
 # 模型使用交接文档
 
-本文档面向后续做策略和回测的同学，说明当前有哪些模型、最终推荐模型怎么用、输入输出字段是什么，以及预测结果如何接入策略。
+本文档面向后续策略和回测流程，说明当前有哪些模型、最终推荐模型怎么用、输入输出字段是什么，以及预测结果如何接入策略。
 
 ## 1. 最终推荐模型
 
@@ -26,18 +26,18 @@ final_pred = pred_lgb + 1.5 * residual_rank_pred
 模型文件：
 
 ```text
-outputs/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
+outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
 ```
 
 最终预测交接文件：
 
 ```text
-outputs/sdd_final_model_handoff/valid/valid_pred.parquet
-outputs/sdd_final_model_handoff/test/test_pred.parquet
-outputs/sdd_final_model_handoff/summary.json
+outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/summary.json
 ```
 
-策略同学优先使用 `outputs/sdd_final_model_handoff/test/test_pred.parquet`。
+策略端优先使用 `outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet`。
 
 ## 2. 数据和时间范围
 
@@ -85,7 +85,7 @@ trade_date, ts_code, pred
 ```python
 import pandas as pd
 
-pred = pd.read_parquet("outputs/sdd_final_model_handoff/test/test_pred.parquet")
+pred = pd.read_parquet("outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet")
 
 # 每天按 pred 从高到低排序，选前 K 只股票。
 daily_list = (
@@ -154,19 +154,19 @@ pred = final_pred = pred_lgb + 1.5 * residual_rank_pred
 
 | 模型 | 路径 | 用途 | 是否最终推荐 |
 | --- | --- | --- | --- |
-| GRU layer1 baseline | `outputs/sdd_final_test_eval/layer1/test/test_pred.parquet` | 深度学习 baseline | 否 |
-| MLP baseline | `outputs/sdd_final_test_eval/mlp_baseline/test/test_pred.parquet` | 非序列深度学习 baseline | 否 |
-| LightGBM top40 | `outputs/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet` | 最强纯树模型 baseline | 作为强 baseline |
-| XGBoost top40 | `outputs/sdd_feature_selection/xgboost_top40/xgboost/test/test_pred.parquet` | 纯树模型 baseline | 否 |
-| Residual-rank deep_ln alpha=1.5 | `outputs/sdd_final_model_handoff/test/test_pred.parquet` | 最终融合模型 | 是 |
+| GRU layer1 baseline | `outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet` | 深度学习 baseline | 否 |
+| MLP baseline | `outputs/models/20260530_103903__final_test_eval/mlp_baseline/test/test_pred.parquet` | 非序列深度学习 baseline | 否 |
+| LightGBM top40 | `outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet` | 最强纯树模型 baseline | 作为强 baseline |
+| XGBoost top40 | `outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet` | 纯树模型 baseline | 否 |
+| Residual-rank deep_ln alpha=1.5 | `outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet` | 最终融合模型 | 是 |
 
 对应模型文件：
 
 | 模型 | 模型文件 |
 | --- | --- |
-| LightGBM top40 | `outputs/sdd_feature_selection/lightgbm_top40/lightgbm/model.txt` |
-| XGBoost top40 | `outputs/sdd_feature_selection/xgboost_top40/xgboost/model.json` |
-| Residual-rank MLP | `outputs/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt` |
+| LightGBM top40 | `outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/model.txt` |
+| XGBoost top40 | `outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/model.json` |
+| Residual-rank MLP | `outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt` |
 
 ## 6. 模型结果对比
 
@@ -190,35 +190,35 @@ pred = final_pred = pred_lgb + 1.5 * residual_rank_pred
 如果只是做策略回测，不需要重新跑模型，直接读取：
 
 ```text
-outputs/sdd_final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
 ```
 
 如果要重新生成，需要先有 LGB/XGB top40 的预测文件：
 
 ```text
-outputs/sdd_feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet
-outputs/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet
-outputs/sdd_feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet
-outputs/sdd_feature_selection/xgboost_top40/xgboost/test/test_pred.parquet
+outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet
+outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet
+outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet
+outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet
 ```
 
-这些文件由 `src/models/sdd/run_gbdt.py` 生成。典型命令：
+这些文件由 `src/model_experiments/run_gbdt.py` 生成。典型命令：
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model lightgbm \
   --processed-dir data/processed \
-  --out-root outputs/sdd_feature_selection/lightgbm_top40 \
-  --feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt \
+  --out-root outputs/models/20260530_205006__feature_selection/lightgbm_top40 \
+  --feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt \
   --num-threads 16 \
   --num-boost-round 800 \
   --early-stopping-rounds 80
 
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model xgboost \
   --processed-dir data/processed \
-  --out-root outputs/sdd_feature_selection/xgboost_top40 \
-  --feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt \
+  --out-root outputs/models/20260530_205006__feature_selection/xgboost_top40 \
+  --feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt \
   --num-threads 16 \
   --num-boost-round 800 \
   --early-stopping-rounds 80
@@ -233,13 +233,13 @@ final_pred = pred_lgb + 1.5 * residual_rank_pred
 其中 `residual_rank_pred` 来自：
 
 ```text
-outputs/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
+outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
 ```
 
 当前已经生成好的最终预测文件保存在：
 
 ```text
-outputs/sdd_final_model_handoff/
+outputs/models/20260531_162154__final_model_handoff/
 ```
 
 ## 8. 策略侧建议
@@ -312,41 +312,41 @@ docs/dev/07_后续模型实验记录.md
 
 用途：
 
-- `08_model_handoff.md` 是策略同学优先阅读的交接文档。
+- `08_model_handoff.md` 是策略端优先阅读的交接文档。
 - `07_后续模型实验记录.md` 用于追溯模型选择、alpha 调参、baseline 对比和实验过程。
 
 ### 10.2 最终模型和最终预测
 
 ```text
-outputs/sdd_final_model_handoff/
-outputs/sdd_fusion_rank_tune/
+outputs/models/20260531_162154__final_model_handoff/
+outputs/models/20260531_121653__fusion_rank_tune/
 ```
 
 其中最关键的是：
 
 ```text
-outputs/sdd_final_model_handoff/test/test_pred.parquet
-outputs/sdd_final_model_handoff/valid/valid_pred.parquet
-outputs/sdd_final_model_handoff/summary.json
-outputs/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
-outputs/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/summary.json
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/summary.json
+outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
+outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/summary.json
 ```
 
 用途：
 
 - `test_pred.parquet` 是策略侧可直接读取的最终预测结果。
 - `residual_rank_mlp.pt` 是最终深度融合模型参数。
-- `outputs/sdd_fusion_rank_tune/` 保留了 alpha 和结构调参结果，方便复核为什么最终选 `alpha=1.5`。
+- `outputs/models/20260531_121653__fusion_rank_tune/` 保留了 alpha 和结构调参结果，方便复核为什么最终选 `alpha=1.5`。
 
 ### 10.3 关键 baseline
 
 ```text
-outputs/sdd_feature_selection/lightgbm_top40/
-outputs/sdd_feature_selection/xgboost_top40/
-outputs/sdd_final_test_eval/layer1/
-outputs/sdd_final_test_eval/mlp_baseline/
-outputs/sdd_full/e1_gru_5d_rank/
-outputs/sdd_feature_selection/features/lightgbm_top40.txt
+outputs/models/20260530_205006__feature_selection/lightgbm_top40/
+outputs/models/20260530_205006__feature_selection/xgboost_top40/
+outputs/models/20260530_103903__final_test_eval/layer1/
+outputs/models/20260530_103903__final_test_eval/mlp_baseline/
+outputs/models/20260530_015421__sequence_full/e1_gru_5d_rank/
+outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt
 ```
 
 用途：
@@ -367,10 +367,10 @@ requirements.txt
 
 用途：
 
-- `src/models/sdd/run_fusion_methods.py`：最终 residual-rank fusion 训练和评估逻辑。
-- `src/models/sdd/run_gbdt.py`：LightGBM / XGBoost 训练和预测逻辑。
-- `src/models/sdd/run_prediction_ensemble.py`：早期 ensemble 对照。
-- `src/models/sdd/run_rolling_tranche_eval.py`：rolling tranche 回测相关逻辑。
+- `src/model_experiments/run_fusion_methods.py`：最终 residual-rank fusion 训练和评估逻辑。
+- `src/model_experiments/run_gbdt.py`：LightGBM / XGBoost 训练和预测逻辑。
+- `src/model_experiments/run_prediction_ensemble.py`：早期 ensemble 对照。
+- `src/model_experiments/run_rolling_tranche_eval.py`：rolling tranche 回测相关逻辑。
 - `configs/` 和 `requirements.txt` 用于复现实验环境。
 
 ### 10.5 不放入交接包的内容
@@ -387,12 +387,12 @@ __pycache__/
 原因：
 
 - `data/` 体积大且可能涉及原始数据分发问题。
-- 无关实验目录会让策略同学难以判断应该使用哪个模型。
+- 无关实验目录会让策略端难以判断应该使用哪个模型。
 - Python cache 和 git metadata 没有交接价值。
 
 ## 11. 交接包使用顺序
 
-策略同学拿到 zip 后，建议按这个顺序使用：
+策略端拿到 zip 后，建议按这个顺序使用：
 
 1. 先读：
 
@@ -403,7 +403,7 @@ docs/dev/08_model_handoff.md
 2. 直接读取最终测试预测：
 
 ```text
-outputs/sdd_final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
 ```
 
 3. 用以下字段生成策略：
@@ -417,13 +417,13 @@ trade_date, ts_code, pred
 5. 如果要对比 baseline，再读取：
 
 ```text
-outputs/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet
-outputs/sdd_final_test_eval/layer1/test/test_pred.parquet
+outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet
+outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet
 ```
 
 ## 12. 交接时需要强调的话
 
-给策略同学时建议明确说明：
+给策略端时建议明确说明：
 
 ```text
 最终模型输出是每日-股票级别的排序分数 pred，不是收益率，也不是买卖指令。

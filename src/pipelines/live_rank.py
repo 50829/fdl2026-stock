@@ -15,9 +15,12 @@ import xgboost as xgb
 from src.data.load import downcast_numeric
 from src.data.preprocess import build_features, load_config
 from src.models.fusion import add_meta_prediction_features, load_residual_rank_fusion
+from src.utils import read_yaml
 
 
 DATE_RE = re.compile(r"(20\d{6})")
+DEFAULT_MODEL_REGISTRY = "configs/registry/models.yaml"
+DEFAULT_LIVE_ARTIFACT = "final_live"
 
 
 DEFAULT_WATCHLIST = [
@@ -262,12 +265,32 @@ def load_watchlist(path: str | Path | None) -> pd.DataFrame:
     return out.drop_duplicates("ts_code", keep="first").reset_index(drop=True)
 
 
+def resolve_live_artifacts(registry_path: str | Path, artifact_name: str) -> dict[str, str]:
+    registry = read_yaml(registry_path)
+    artifacts = registry.get("artifacts")
+    if not isinstance(artifacts, dict) or artifact_name not in artifacts:
+        choices = ", ".join(sorted(str(name) for name in artifacts)) if isinstance(artifacts, dict) else "<none>"
+        raise ValueError(f"unknown live artifact `{artifact_name}`; registered artifacts: {choices}")
+    artifact = artifacts[artifact_name]
+    if not isinstance(artifact, dict):
+        raise ValueError(f"live artifact `{artifact_name}` must be a mapping")
+    required = ["lgb_model", "xgb_model", "fusion_model"]
+    missing = [key for key in required if not artifact.get(key)]
+    if missing:
+        raise ValueError(f"live artifact `{artifact_name}` is missing required paths: {missing}")
+    return {key: str(artifact[key]) for key in required}
+
+
 def run(args: argparse.Namespace) -> None:
     config = load_config(Path(args.config))
     raw_dir = Path(config["data"]["raw_dir"])
     processed_dir = Path(config["data"]["processed_dir"])
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    artifact_paths = resolve_live_artifacts(args.model_registry, args.artifact_name)
+    lgb_model_path = args.lgb_model or artifact_paths["lgb_model"]
+    xgb_model_path = args.xgb_model or artifact_paths["xgb_model"]
+    fusion_model_path = args.fusion_model or artifact_paths["fusion_model"]
 
     trade_date = str(args.trade_date or default_trade_date(args.decision_date))
     panel, st, open_df, feature_dates = build_panel_from_raw(raw_dir, args.decision_date, trade_date)
@@ -276,21 +299,21 @@ def run(args: argparse.Namespace) -> None:
     live_features = features[features["trade_date"].astype(str) == args.decision_date].copy()
     live_features.to_parquet(out_dir / f"live_features_{args.decision_date}.parquet", index=False)
 
-    lgb_model = lgb.Booster(model_file=args.lgb_model)
+    lgb_model = lgb.Booster(model_file=lgb_model_path)
     feature_cols = lgb_model.feature_name()
     missing = sorted(set(feature_cols) - set(live_features.columns))
     if missing:
         raise ValueError(f"Missing model features: {missing}")
 
     xgb_model = xgb.Booster()
-    xgb_model.load_model(args.xgb_model)
+    xgb_model.load_model(xgb_model_path)
     xmat = xgb.DMatrix(live_features[feature_cols].to_numpy(dtype=np.float32, copy=False), feature_names=feature_cols)
     pred = live_features[["trade_date", "ts_code"]].copy()
     pred["pred_lgb"] = lgb_model.predict(live_features[feature_cols].to_numpy(dtype=np.float32, copy=False)).astype(np.float32)
     pred["pred_xgb"] = xgb_model.predict(xmat).astype(np.float32)
     pred = add_meta_prediction_features(pred)
 
-    fusion = load_residual_rank_fusion(args.fusion_model, alpha=args.alpha)
+    fusion = load_residual_rank_fusion(fusion_model_path, alpha=args.alpha)
     scored = fusion.predict_frame(pred, device=args.device)
     scored["model_rank"] = scored["final_pred"].rank(method="first", ascending=False).astype(int)
 
@@ -329,6 +352,11 @@ def run(args: argparse.Namespace) -> None:
         "decision_date": args.decision_date,
         "trade_date": trade_date,
         "model": args.model_name,
+        "model_registry": args.model_registry,
+        "artifact_name": args.artifact_name,
+        "lgb_model": lgb_model_path,
+        "xgb_model": xgb_model_path,
+        "fusion_model": fusion_model_path,
         "candidate_count": int(len(scored)),
         "raw_feature_dates": feature_dates,
         "top10_csv": str(out_dir / f"top10_{args.decision_date}_for_{trade_date}.csv"),
@@ -346,9 +374,11 @@ def run_cli() -> None:
     parser.add_argument("--trade-date", default=None, help="Trade date for the generated plan. Defaults to decision_date + 1 calendar day.")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--lgb-model", default="outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/model.txt")
-    parser.add_argument("--xgb-model", default="outputs/models/sdd_feature_selection/xgboost_top40/xgboost/model.json")
-    parser.add_argument("--fusion-model", default="outputs/models/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt")
+    parser.add_argument("--model-registry", default=DEFAULT_MODEL_REGISTRY)
+    parser.add_argument("--artifact-name", default=DEFAULT_LIVE_ARTIFACT)
+    parser.add_argument("--lgb-model", default=None, help="Override the LightGBM artifact from --artifact-name.")
+    parser.add_argument("--xgb-model", default=None, help="Override the XGBoost artifact from --artifact-name.")
+    parser.add_argument("--fusion-model", default=None, help="Override the residual-rank fusion artifact from --artifact-name.")
     parser.add_argument("--alpha", type=float, default=1.5)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--watchlist", default=None, help="Optional CSV with stock_name/name and ts_code columns.")

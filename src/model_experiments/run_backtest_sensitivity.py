@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.evaluation import BacktestConfig, ic_metrics, max_drawdown, sharpe_ratio
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
 def load_pred(path: str | Path, label_col: str, raw_return_col: str, daily_return_col: str) -> pd.DataFrame:
@@ -270,7 +270,9 @@ def run_one(name: str, split: str, path: str, out_root: Path, args: argparse.Nam
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out-root", default="outputs/sdd_gbdt_sensitivity")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="gbdt_sensitivity")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--label-col", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
@@ -292,13 +294,13 @@ def run_cli() -> None:
 
     if not args.pred:
         args.pred = [
-            ("lightgbm", "valid", "outputs/sdd_gbdt_full/lightgbm/valid/valid_pred.parquet"),
-            ("lightgbm", "test", "outputs/sdd_gbdt_full/lightgbm/test/test_pred.parquet"),
-            ("xgboost", "valid", "outputs/sdd_gbdt_full/xgboost/valid/valid_pred.parquet"),
-            ("xgboost", "test", "outputs/sdd_gbdt_full/xgboost/test/test_pred.parquet"),
+            ("lightgbm", "valid", "outputs/models/20260530_200734__gbdt_full/lightgbm/valid/valid_pred.parquet"),
+            ("lightgbm", "test", "outputs/models/20260530_200734__gbdt_full/lightgbm/test/test_pred.parquet"),
+            ("xgboost", "valid", "outputs/models/20260530_200734__gbdt_full/xgboost/valid/valid_pred.parquet"),
+            ("xgboost", "test", "outputs/models/20260530_200734__gbdt_full/xgboost/test/test_pred.parquet"),
         ]
 
-    out_root = Path(args.out_root)
+    out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
     summaries = [run_one(name, split, path, out_root, args) for name, split, path in args.pred]
     write_json(out_root / "summary.json", {"experiments": summaries})
 

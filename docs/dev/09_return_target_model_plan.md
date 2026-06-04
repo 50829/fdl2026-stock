@@ -240,14 +240,14 @@ rolling maxDD
 ### 9.1 LightGBM 收益率 baseline
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model lightgbm \
   --processed-dir data/processed \
-  --out-root outputs/sdd_return_gbdt_top40 \
+  --out-root outputs/models/return_gbdt_top40 \
   --target label_5d \
   --raw-return-col label_5d \
   --daily-return-col label_1d \
-  --feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt \
+  --feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt \
   --num-threads 16 \
   --num-boost-round 800 \
   --early-stopping-rounds 80 \
@@ -257,14 +257,14 @@ python -m src.models.sdd.run_gbdt \
 ### 9.2 XGBoost 收益率 baseline
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model xgboost \
   --processed-dir data/processed \
-  --out-root outputs/sdd_return_gbdt_top40 \
+  --out-root outputs/models/return_gbdt_top40 \
   --target label_5d \
   --raw-return-col label_5d \
   --daily-return-col label_1d \
-  --feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt \
+  --feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt \
   --num-threads 16 \
   --num-boost-round 800 \
   --early-stopping-rounds 80 \
@@ -274,15 +274,15 @@ python -m src.models.sdd.run_gbdt \
 ### 9.3 Residual-value MLP 收益率模型
 
 ```bash
-python -m src.models.sdd.run_residual_mlp \
+python -m src.model_experiments.run_residual_mlp \
   --mode oof \
   --processed-dir data/processed \
-  --out-root outputs/sdd_return_residual_mlp_deep_ln \
+  --out-root outputs/models/return_residual_mlp_deep_ln \
   --target label_5d \
   --raw-return-col label_5d \
   --daily-return-col label_1d \
-  --base-feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt \
-  --mlp-feature-list outputs/sdd_feature_selection/features/lightgbm_top40.txt \
+  --base-feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt \
+  --mlp-feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt \
   --mlp-arch deep_ln \
   --mlp-loss smooth_l1 \
   --mlp-hidden 128 \
@@ -302,7 +302,7 @@ python -m src.models.sdd.run_residual_mlp \
 之前尝试直接启动过一版全量 OOF 收益率 residual-value 训练：
 
 ```text
-outputs/sdd_return_residual_mlp_deep_ln
+outputs/models/return_residual_mlp_deep_ln
 ```
 
 但该任务比 rank 目标明显更慢，几分钟内没有写出中间产物，因此已经中止。

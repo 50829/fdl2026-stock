@@ -11,7 +11,7 @@ import pandas as pd
 
 from src.data import ProcessedConfig, ProcessedSplit, build_processed_splits, load_feature_columns
 from src.evaluation import BacktestConfig, evaluate_prediction_scores
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
 def load_tabular_frame(
@@ -301,7 +301,9 @@ def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["lightgbm", "xgboost"], default="lightgbm")
     parser.add_argument("--processed-dir", default="data/processed_pilot")
-    parser.add_argument("--out-root", default="outputs/sdd_gbdt_pilot")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="gbdt_pilot")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--target", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
@@ -332,6 +334,7 @@ def run_cli() -> None:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
+    args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
     run(args)
 
 

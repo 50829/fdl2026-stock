@@ -13,8 +13,8 @@ Residual-rank deep_ln, alpha=1.5
 最终预测文件：
 
 ```text
-outputs/sdd_final_model_handoff/valid/valid_pred.parquet
-outputs/sdd_final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
 ```
 
 策略侧只应使用：
@@ -337,7 +337,7 @@ io.py           保存 trades/holdings/equity/metrics
 src/pipelines/run_strategy_backtest.py
 ```
 
-而不是继续放入 `src/models/sdd/`，因为策略已经属于模型交付后的组合构建流程，不是模型训练实验本身。
+而不是继续放入 `src/model_experiments/`，因为策略已经属于模型交付后的组合构建流程，不是模型训练实验本身。
 
 ## 12. 下一步执行顺序
 

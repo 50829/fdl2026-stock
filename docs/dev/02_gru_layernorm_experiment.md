@@ -20,9 +20,9 @@ layer1 GRU + 112 features + lookback=60 + attention + SmoothL1 + early stopping
 
 涉及文件：
 
-- `src/models/lrk/alstm.py`
+- `src/models/sequence/alstm.py`
 - `src/models/__init__.py`
-- `src/models/sdd/run_ablation.py`
+- `src/model_experiments/run_ablation.py`
 
 新增模型配置开关：
 
@@ -71,7 +71,7 @@ features: all 112 features
 输出目录：
 
 ```text
-outputs/sdd_layernorm_ablation/
+outputs/models/20260530_154249__layernorm_ablation/
 ```
 
 ## 实验结果

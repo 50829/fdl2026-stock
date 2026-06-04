@@ -1,0 +1,31 @@
+models:
+  final:
+    description: Final residual-rank handoff model, alpha=1.5.
+    predictions:
+      valid: outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+      test: outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
+  lgb_top40:
+    description: LightGBM top40 feature baseline.
+    predictions:
+      valid: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet
+      test: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet
+  xgb_top40:
+    description: XGBoost top40 feature baseline.
+    predictions:
+      valid: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet
+      test: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet
+
+artifacts:
+  final_live:
+    lgb_model: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/model.txt
+    xgb_model: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/model.json
+    fusion_model: outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
+
+feature_sets:
+  risk_default:
+    path: data/processed/features.parquet
+    columns:
+      - log_total_mv__cs_rank
+      - log_amount__cs_rank
+      - volatility_20__cs_rank
+      - turnover_rate__cs_rank

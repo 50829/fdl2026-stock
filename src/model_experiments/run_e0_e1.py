@@ -22,7 +22,7 @@ from src.data.processed import _load_cached_feature_frame
 from src.evaluation import backtest_config_from_cfg, backtest_rolling_tranche, backtest_topk, ic_metrics
 from src.models import build_model
 from src.train import train as train_model
-from src.utils import read_yaml, write_json
+from src.utils import make_run_dir, read_yaml, write_json
 
 
 EXPERIMENTS = {
@@ -345,22 +345,25 @@ def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiments", nargs="+", default=["e0", "e1"], choices=sorted(EXPERIMENTS))
     parser.add_argument("--stage", nargs="+", default=["train", "eval", "predict"], choices=["train", "eval", "predict"])
-    parser.add_argument("--out-root", default="outputs/sdd")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="sequence_e0_e1")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--device", default=None)
     args = parser.parse_args()
 
+    out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
     summaries = []
     for exp_key in args.experiments:
         summaries.append(
             run_experiment(
                 exp_key,
                 config_path=EXPERIMENTS[exp_key]["config"],
-                out_root=Path(args.out_root),
+                out_root=out_root,
                 stages=args.stage,
                 device=args.device,
             )
         )
-    write_json(Path(args.out_root) / "e0_e1_summary.json", {"experiments": summaries})
+    write_json(out_root / "e0_e1_summary.json", {"experiments": summaries})
 
 
 if __name__ == "__main__":

@@ -32,8 +32,8 @@ label_1d GRU + 每日全换仓
 
 新增/修改文件：
 
-- `src/models/sdd/run_e0_e1.py`
-- `src/models/sdd/run_rolling_tranche_eval.py`
+- `src/model_experiments/run_e0_e1.py`
+- `src/model_experiments/run_rolling_tranche_eval.py`
 
 新增回测模式：
 
@@ -68,21 +68,21 @@ transaction_cost_bps = 5.0
 本实验没有重新训练模型，直接复用已有最佳 5d layer1 GRU 的预测：
 
 ```text
-valid: outputs/sdd_ablation_full/layer1/valid/valid_pred.parquet
-test:  outputs/sdd_final_test_eval/layer1/test/test_pred.parquet
+valid: outputs/models/20260530_103415__sequence_ablation_full/layer1/valid/valid_pred.parquet
+test:  outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet
 ```
 
 命令：
 
 ```bash
-python -m src.models.sdd.run_rolling_tranche_eval \
-  --out-root outputs/sdd_rolling_tranche_eval
+python -m src.model_experiments.run_rolling_tranche_eval \
+  --out-root outputs/models/20260530_194341__rolling_tranche_eval
 ```
 
 输出：
 
 ```text
-outputs/sdd_rolling_tranche_eval/summary.json
+outputs/models/20260530_194341__rolling_tranche_eval/summary.json
 ```
 
 ## 结果

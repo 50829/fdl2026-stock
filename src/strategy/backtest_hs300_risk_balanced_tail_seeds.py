@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.utils import make_run_dir
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -22,13 +24,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--input",
-        default="outputs/models/sdd_final_model_handoff/test/test_pred.parquet",
+        default="outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet",
         help="Prediction parquet with trade_date, ts_code, pred, and label_1d.",
     )
     parser.add_argument(
         "--output-dir",
-        default="outputs/strategy/hs300_risk_balanced_tail_seeded_final",
+        default=None,
+        help="Exact output directory. Overrides --output-root/--run-name when provided.",
     )
+    parser.add_argument("--output-root", default="outputs/strategy")
+    parser.add_argument("--run-name", default="hs300_risk_balanced_tail_seeded_final")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <output-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--score-col", default="pred")
     parser.add_argument("--return-col", default="label_1d")
     parser.add_argument("--stages", default="10,100,300")
@@ -422,7 +428,7 @@ def write_equity_svg(daily_rows: list[dict[str, object]], stage_days: int, outpu
 def main() -> None:
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     args = parse_args()
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir) if args.output_dir else make_run_dir(args.output_root, args.run_name, timestamped=not args.no_timestamp)
     output_dir.mkdir(parents=True, exist_ok=True)
     stages = parse_ints(args.stages)
     seeds = parse_ints(args.seeds)

@@ -16,10 +16,10 @@ from src.data import ProcessedConfig, ProcessedSplit
 from src.models.mlp import MLPModel
 from src.evaluation import ic_metrics
 from src.models.fusion import DeepMLP, standardize
-from src.models.sdd.run_gbdt import evaluate_predictions, load_tabular_frame, predict_model, train_lightgbm
-from src.models.sdd.run_gbdt_walkforward import resolve_features, year_split
+from src.model_experiments.run_gbdt import evaluate_predictions, load_tabular_frame, predict_model, train_lightgbm
+from src.model_experiments.run_gbdt_walkforward import resolve_features, year_split
 from src.train import set_seed
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
 def split_range(name: str, start: str, end: str) -> ProcessedSplit:
@@ -311,10 +311,12 @@ def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["frozen", "oof", "both"], default="both")
     parser.add_argument("--processed-dir", default="data/processed")
-    parser.add_argument("--feature-list", default="outputs/sdd_feature_selection/features/lightgbm_top40.txt")
+    parser.add_argument("--feature-list", default="outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt")
     parser.add_argument("--base-feature-list", default=None)
     parser.add_argument("--mlp-feature-list", default=None)
-    parser.add_argument("--out-root", default="outputs/sdd_residual_mlp")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="residual_mlp")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--target", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
@@ -355,6 +357,7 @@ def run_cli() -> None:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
+    args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
 
     pcfg = ProcessedConfig(processed_dir=args.processed_dir)
     base_feature_list = args.base_feature_list if args.base_feature_list is not None else args.feature_list

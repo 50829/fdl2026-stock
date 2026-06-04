@@ -8,12 +8,12 @@ import pandas as pd
 
 from src.data import ProcessedConfig
 from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
 DEFAULT_PRED_PATHS = {
-    "valid": "outputs/sdd_ablation_full/layer1/valid/valid_pred.parquet",
-    "test": "outputs/sdd_final_test_eval/layer1/test/test_pred.parquet",
+    "valid": "outputs/models/20260530_103415__sequence_ablation_full/layer1/valid/valid_pred.parquet",
+    "test": "outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet",
 }
 
 
@@ -97,7 +97,9 @@ def run_cli() -> None:
     parser.add_argument("--processed-dir", default="data/processed")
     parser.add_argument("--valid-pred", default=DEFAULT_PRED_PATHS["valid"])
     parser.add_argument("--test-pred", default=DEFAULT_PRED_PATHS["test"])
-    parser.add_argument("--out-root", default="outputs/sdd_rolling_tranche_eval")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="rolling_tranche_eval")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--label-col", default="label_5d__cs_rank")
     parser.add_argument("--five-day-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
@@ -108,7 +110,7 @@ def run_cli() -> None:
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
 
-    out_root = Path(args.out_root)
+    out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
     summaries = {}
     for split, pred in {"valid": args.valid_pred, "test": args.test_pred}.items():
         pred_path = Path(pred)

@@ -101,8 +101,8 @@ tail = 在高分候选中按历史低相关、低波动、低下行波动筛选
 模型：
 
 ```text
-final:     outputs/models/sdd_final_model_handoff/{valid,test}/..._pred.parquet
-lgb_top40: outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/{valid,test}/..._pred.parquet
+final:     outputs/models/20260531_162154__final_model_handoff/{valid,test}/..._pred.parquet
+lgb_top40: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/{valid,test}/..._pred.parquet
 ```
 
 收益列：
@@ -242,7 +242,7 @@ tail 70 股占 10% 权重
 
 ```bash
 python src/strategy/backtest_hs300_risk_balanced_tail_seeds.py \
-  --input outputs/models/sdd_final_model_handoff/test/test_pred.parquet \
+  --input outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet \
   --output-dir outputs/strategy/hs300_risk_balanced_tail_seeded_final_test \
   --stages 10,100,300 \
   --seeds 0,1,2,3,4,5,6,7,8,9

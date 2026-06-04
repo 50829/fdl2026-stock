@@ -15,8 +15,8 @@ from src.data import ProcessedConfig, build_processed_splits, iter_processed_seq
 from src.data.feature_meta import read_feature_meta, resolve_feature_columns, read_parquet_feature_columns
 from src.models import build_model
 from src.train import set_seed
-from src.models.sdd.run_e0_e1 import evaluate_split, resolve_warmup_start
-from src.utils import write_json
+from src.model_experiments.run_e0_e1 import evaluate_split, resolve_warmup_start
+from src.utils import make_run_dir, write_json
 
 
 BASE_CFG = {
@@ -397,14 +397,16 @@ def run_feature_list_ablation(
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiments", nargs="+", default=list(EXPERIMENTS), choices=sorted(EXPERIMENTS))
-    parser.add_argument("--out-root", default="outputs/sdd_ablation")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="sequence_ablation")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--processed-dir", default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--feature-list", default=None)
     parser.add_argument("--custom-name", default=None)
     args = parser.parse_args()
 
-    out_root = Path(args.out_root)
+    out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
     if args.feature_list:
         base_experiment = args.experiments[0]
         custom_name = args.custom_name or f"{base_experiment}_feature_list"

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation import BacktestConfig, evaluate_prediction_scores, load_prediction_frame
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
 def load_pred(path: str | Path, name: str) -> pd.DataFrame:
@@ -103,20 +103,22 @@ def run_split(
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out-root", default="outputs/sdd_ensemble_full")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="ensemble_full")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--label-col", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
     parser.add_argument("--grid-step", type=float, default=0.25)
-    parser.add_argument("--valid-gru", default="outputs/sdd_ablation_full/layer1/valid/valid_pred.parquet")
-    parser.add_argument("--test-gru", default="outputs/sdd_final_test_eval/layer1/test/test_pred.parquet")
-    parser.add_argument("--valid-lightgbm", default="outputs/sdd_gbdt_full/lightgbm/valid/valid_pred.parquet")
-    parser.add_argument("--test-lightgbm", default="outputs/sdd_gbdt_full/lightgbm/test/test_pred.parquet")
-    parser.add_argument("--valid-xgboost", default="outputs/sdd_gbdt_full/xgboost/valid/valid_pred.parquet")
-    parser.add_argument("--test-xgboost", default="outputs/sdd_gbdt_full/xgboost/test/test_pred.parquet")
+    parser.add_argument("--valid-gru", default="outputs/models/20260530_103415__sequence_ablation_full/layer1/valid/valid_pred.parquet")
+    parser.add_argument("--test-gru", default="outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet")
+    parser.add_argument("--valid-lightgbm", default="outputs/models/20260530_200734__gbdt_full/lightgbm/valid/valid_pred.parquet")
+    parser.add_argument("--test-lightgbm", default="outputs/models/20260530_200734__gbdt_full/lightgbm/test/test_pred.parquet")
+    parser.add_argument("--valid-xgboost", default="outputs/models/20260530_200734__gbdt_full/xgboost/valid/valid_pred.parquet")
+    parser.add_argument("--test-xgboost", default="outputs/models/20260530_200734__gbdt_full/xgboost/test/test_pred.parquet")
     args = parser.parse_args()
 
-    out_root = Path(args.out_root)
+    out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
     valid = run_split(
         "valid",
         {"lightgbm": args.valid_lightgbm, "xgboost": args.valid_xgboost, "gru": args.valid_gru},

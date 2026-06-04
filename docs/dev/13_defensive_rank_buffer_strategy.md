@@ -131,8 +131,8 @@ python -m src.pipelines.run_strategy_backtest \
 使用的模型预测：
 
 ```text
-outputs/models/sdd_final_model_handoff/valid/valid_pred.parquet
-outputs/models/sdd_final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
 ```
 
 输出目录：

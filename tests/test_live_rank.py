@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.pipelines.live_rank import default_trade_date, first_existing, load_watchlist, read_loose_raw
+from src.pipelines.live_rank import (
+    default_trade_date,
+    first_existing,
+    load_watchlist,
+    read_loose_raw,
+    resolve_live_artifacts,
+)
 
 
 def test_default_trade_date_is_next_calendar_day() -> None:
@@ -39,3 +45,23 @@ def test_read_loose_raw_returns_empty_parts_when_optional_files_are_missing(tmp_
     assert moneyflow == []
     assert st == []
     assert open_df is None
+
+
+def test_resolve_live_artifacts_reads_registry(tmp_path) -> None:
+    registry = tmp_path / "models.yaml"
+    registry.write_text(
+        """
+artifacts:
+  final_live:
+    lgb_model: lgb.txt
+    xgb_model: xgb.json
+    fusion_model: fusion.pt
+""",
+        encoding="utf-8",
+    )
+
+    assert resolve_live_artifacts(registry, "final_live") == {
+        "lgb_model": "lgb.txt",
+        "xgb_model": "xgb.json",
+        "fusion_model": "fusion.pt",
+    }

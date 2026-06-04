@@ -6,7 +6,7 @@
 
 代码审查发现，前一阶段实验结果本身没有明显未来函数，但存在几个口径不一致问题：
 
-- 当前最佳 GRU 只存在于 `src/models/sdd/run_ablation.py`，正式 `src/train.py` 仍然固定使用 MSE、无 early stopping。
+- 当前最佳 GRU 只存在于 `src/model_experiments/run_ablation.py`，正式 `src/train.py` 仍然固定使用 MSE、无 early stopping。
 - sequence model 的训练 valid loss 只在 valid split 内构造 lookback，少掉 valid 开头 59 个交易日；最终评估却使用 split 前历史 warmup。
 - GRU 序列样本原先要求整个 lookback 窗口都在 universe，MLP 只要求预测日当天在 universe，二者 coverage 不完全可比。
 - 回测调仓周期固定在代码里，不方便区分 5 日非重叠回测和 1 日 daily rebalance。
@@ -73,9 +73,9 @@ smooth_l1
 
 sequence model 的 train/valid 都改用新的 labeled sequence iterator。valid loss 使用 warmup 口径。
 
-### 4. `sdd/run_ablation.py` 训练口径同步
+### 4. `sequence_baselines/run_ablation.py` 训练口径同步
 
-`src/models/sdd/run_ablation.py` 也改为使用同一套 sequence iterator。
+`src/model_experiments/run_ablation.py` 也改为使用同一套 sequence iterator。
 
 因此：
 
@@ -88,7 +88,7 @@ early stopping 用的 valid loss
 
 ### 5. 回测参数改为配置读取
 
-`src/models/sdd/run_e0_e1.py` 现在支持：
+`src/model_experiments/run_e0_e1.py` 现在支持：
 
 ```yaml
 backtest:
@@ -155,9 +155,9 @@ first valid sample date: 2024-01-02
 端到端 smoke run：
 
 ```bash
-python -m src.models.sdd.run_ablation \
+python -m src.model_experiments.run_ablation \
   --experiments layer1 \
-  --out-root outputs/sdd_protocol_smoke \
+  --out-root outputs/models/20260530_161252__protocol_smoke \
   --epochs 1
 ```
 
@@ -192,10 +192,10 @@ daily rebalance 的基础配置已经新增，但还没有重新训练 `label_1d
 建议先跑 daily 口径 pilot：
 
 ```bash
-python -m src.models.sdd.run_e0_e1 \
+python -m src.model_experiments.run_e0_e1 \
   --experiments e1_daily \
   --stage train eval \
-  --out-root outputs/sdd_daily_pilot
+  --out-root outputs/models/20260530_162345__sequence_daily_pilot
 ```
 
 然后和当前 `label_5d` GRU 对比 daily IC/ICIR，再决定是走 1 日预测，还是实现 5 日 rolling tranche 回测。

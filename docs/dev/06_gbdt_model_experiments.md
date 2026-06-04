@@ -18,12 +18,12 @@ All experiments use the same main target as the current GRU baseline:
 
 ## Code Added
 
-- `src/models/sdd/run_gbdt.py`
+- `src/model_experiments/run_gbdt.py`
   - Loads processed tabular features and labels.
   - Trains `lightgbm` or `xgboost`.
   - Saves model, feature importance, valid/test predictions, IC metrics, top-k backtest, and rolling tranche backtest.
 
-- `src/models/sdd/run_prediction_ensemble.py`
+- `src/model_experiments/run_prediction_ensemble.py`
   - Merges saved predictions from GRU, LightGBM, and XGBoost.
   - Converts each model prediction to daily percentile rank.
   - Tests a weight grid and evaluates the same IC/backtest metrics.
@@ -39,10 +39,10 @@ Dependencies installed:
 Pilot LightGBM:
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model lightgbm \
   --processed-dir data/processed_pilot \
-  --out-root outputs/sdd_gbdt_pilot \
+  --out-root outputs/models/20260530_200657__gbdt_pilot \
   --num-boost-round 1000 \
   --early-stopping-rounds 80 \
   --num-threads 8 \
@@ -52,10 +52,10 @@ python -m src.models.sdd.run_gbdt \
 Full LightGBM:
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model lightgbm \
   --processed-dir data/processed \
-  --out-root outputs/sdd_gbdt_full \
+  --out-root outputs/models/20260530_200734__gbdt_full \
   --num-boost-round 1500 \
   --early-stopping-rounds 100 \
   --num-threads 16 \
@@ -65,10 +65,10 @@ python -m src.models.sdd.run_gbdt \
 Pilot XGBoost:
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model xgboost \
   --processed-dir data/processed_pilot \
-  --out-root outputs/sdd_gbdt_pilot \
+  --out-root outputs/models/20260530_200657__gbdt_pilot \
   --num-boost-round 1000 \
   --early-stopping-rounds 80 \
   --num-threads 16 \
@@ -81,10 +81,10 @@ python -m src.models.sdd.run_gbdt \
 Full XGBoost:
 
 ```bash
-python -m src.models.sdd.run_gbdt \
+python -m src.model_experiments.run_gbdt \
   --model xgboost \
   --processed-dir data/processed \
-  --out-root outputs/sdd_gbdt_full \
+  --out-root outputs/models/20260530_200734__gbdt_full \
   --num-boost-round 1200 \
   --early-stopping-rounds 100 \
   --num-threads 16 \
@@ -97,8 +97,8 @@ python -m src.models.sdd.run_gbdt \
 Prediction ensemble:
 
 ```bash
-python -m src.models.sdd.run_prediction_ensemble \
-  --out-root outputs/sdd_ensemble_full \
+python -m src.model_experiments.run_prediction_ensemble \
+  --out-root outputs/models/20260530_201321__ensemble_full \
   --grid-step 0.25
 ```
 
@@ -126,7 +126,7 @@ Pilot conclusion: both GBDT models clearly have signal, and both exceed the exis
 | GRU layer1 | valid | 766867 | 0.327678 | 0.095154 | 0.511638 | 0.126012 | -0.054890* |
 | GRU layer1 | test | 1019298 | 0.327920 | 0.085123 | 0.648694 | 0.358659 | 0.875401* |
 
-`*` GRU rolling returns are from `outputs/sdd_rolling_tranche_eval`, because the original GRU metrics file did not include rolling metrics.
+`*` GRU rolling returns are from `outputs/models/20260530_194341__rolling_tranche_eval`, because the original GRU metrics file did not include rolling metrics.
 
 Full conclusion:
 

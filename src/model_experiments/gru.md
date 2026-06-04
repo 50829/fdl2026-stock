@@ -253,10 +253,10 @@ model, lookback, hidden, target, valid_ic, test_ic, icir, annual_return, sharpe,
 
 ## 建议目录结构
 
-当前 `src/models/sdd/` 可以作为 GRU 方向的独立实现目录。建议结构如下：
+当前 `src/model_experiments/` 可以作为 GRU 方向的独立实现目录。建议结构如下：
 
 ```text
-src/models/sdd/
+src/model_experiments/
   gru.md                 # 本设计文档
   __init__.py
   config.yaml            # GRU 默认实验配置
@@ -273,7 +273,7 @@ src/models/sdd/
 输出目录建议：
 
 ```text
-outputs/models/sdd/gru/
+outputs/models/20260530_013040__sequence_baselines/gru/
   E00_mlp/
     config.yaml
     best.pt
@@ -283,12 +283,12 @@ outputs/models/sdd/gru/
   E01_vanilla_gru/
   E02_attentive_gru/
 
-outputs/predictions/sdd/gru/
+outputs/predictions/sequence_baselines/gru/
   E02_valid_pred.parquet
   E02_test_pred.parquet
   E02_latest_pred.csv
 
-outputs/figures/sdd/gru/
+outputs/figures/sequence_baselines/gru/
   E02_ic_curve.png
   E02_equity_curve.png
   ablation_summary.png
@@ -297,13 +297,13 @@ outputs/figures/sdd/gru/
 日志建议：
 
 ```text
-logs/sdd/gru/
+logs/sequence_baselines/gru/
   E02_attentive_gru.log
 ```
 
 ## 配置文件草案
 
-建议 `src/models/sdd/config.yaml`：
+建议 `src/model_experiments/config.yaml`：
 
 ```yaml
 seed: 2026
@@ -347,10 +347,10 @@ eval:
 
 output:
   run_name: E02_attentive_gru
-  model_dir: outputs/models/sdd/gru
-  prediction_dir: outputs/predictions/sdd/gru
-  figure_dir: outputs/figures/sdd/gru
-  log_dir: logs/sdd/gru
+  model_dir: outputs/models/20260530_013040__sequence_baselines/gru
+  prediction_dir: outputs/predictions/sequence_baselines/gru
+  figure_dir: outputs/figures/sequence_baselines/gru
+  log_dir: logs/sequence_baselines/gru
 ```
 
 ## 实现顺序
@@ -415,7 +415,6 @@ output:
     一个传统强 baseline，再考虑神经网络输出作为额外特
     征。
 
-我下一步具体会先改 src/models/lrk/alstm.py，给当前
-GRU/ALSTM 增加可配置的 LayerNorm，然后在 src/models/
-sdd/run_ablation.py 里加这几组实验，跑 pilot 并生成对
-照表。
+下一步优先改 src/models/sequence/alstm.py，给当前 GRU/ALSTM
+增加可配置的 LayerNorm，然后在 src/model_experiments/run_ablation.py
+里加这几组实验，跑 pilot 并生成对照表。

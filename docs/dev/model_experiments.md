@@ -1,16 +1,16 @@
 # Model Experiment Log
 
-本文档记录 2026-05-30 前后在 `src/models/sdd/` 下完成的模型实验、代码变更和阶段性结论。当前所有调参结论都以验证集为准，测试集只作为最终对比参考，不用于调参。
+本文档记录 2026-05-30 前后在 `src/model_experiments/` 下完成的模型实验、代码变更和阶段性结论。当前所有调参结论都以验证集为准，测试集只作为最终对比参考，不用于调参。
 
 ## 代码变更
 
 新增或修改的主要代码：
 
-- `src/models/sdd/run_e0_e1.py`：统一跑 E0/E1 的训练、验证/测试预测、IC/ICIR、Top-N 回测。
-- `src/models/sdd/run_ablation.py`：用于 GRU/TCN 的消融实验，支持 early stopping、best checkpoint、特征组选择和不同 loss。
+- `src/model_experiments/run_e0_e1.py`：统一跑 E0/E1 的训练、验证/测试预测、IC/ICIR、Top-N 回测。
+- `src/model_experiments/run_ablation.py`：用于 GRU/TCN 的消融实验，支持 early stopping、best checkpoint、特征组选择和不同 loss。
 - `src/data/processed.py`：增加 `cache_in_memory` 路径，避免每个 epoch 反复按日期扫描 parquet；序列样本使用 `sliding_window_view` 批量构造。
-- `src/models/lrk/alstm.py`：为 ALSTM/GRU 增加 `use_attention`、`input_layernorm`、`hidden_layernorm` 开关，用于比较 attention 和 LayerNorm 变体。
-- `src/models/lrk/tcn.py`：新增 TCN 模型，包含 causal dilated convolution、residual block 和可选 temporal attention pooling。
+- `src/models/sequence/alstm.py`：为 ALSTM/GRU 增加 `use_attention`、`input_layernorm`、`hidden_layernorm` 开关，用于比较 attention 和 LayerNorm 变体。
+- `src/models/sequence/tcn.py`：新增 TCN 模型，包含 causal dilated convolution、residual block 和可选 temporal attention pooling。
 - `src/models/__init__.py`、`src/train.py`、`src/predict.py`：接入 TCN，并让训练/预测识别 TCN 为 sequence model。
 
 当前基础 `ALSTM`/GRU 结构为：
@@ -64,7 +64,7 @@ E0 是 MLP baseline：
 112 features -> Linear(112, 256) -> ReLU -> Dropout(0.2) -> Linear(256, 1)
 ```
 
-E1 是 `src/models/lrk/alstm.py` 中的 ALSTM-GRU：
+E1 是 `src/models/sequence/alstm.py` 中的 ALSTM-GRU：
 
 ```text
 112 features sequence -> Linear+Tanh -> GRU -> temporal attention -> score

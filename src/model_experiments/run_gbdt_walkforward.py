@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.data import ProcessedConfig, ProcessedSplit, load_feature_columns
-from src.models.sdd.run_gbdt import (
+from src.model_experiments.run_gbdt import (
     evaluate_predictions,
     feature_importance,
     load_tabular_frame,
@@ -18,7 +18,7 @@ from src.models.sdd.run_gbdt import (
     train_lightgbm,
     train_xgboost,
 )
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
 def resolve_features(pcfg: ProcessedConfig, feature_list: str | None) -> list[str]:
@@ -136,7 +136,9 @@ def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["lightgbm", "xgboost"], default="lightgbm")
     parser.add_argument("--processed-dir", default="data/processed")
-    parser.add_argument("--out-root", default="outputs/sdd_gbdt_walkforward")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="gbdt_walkforward")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--feature-list", default=None)
     parser.add_argument("--target", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
@@ -171,6 +173,7 @@ def run_cli() -> None:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
+    args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
 
     pcfg = ProcessedConfig(processed_dir=args.processed_dir)
     feature_cols = resolve_features(pcfg, args.feature_list)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from torch import nn
 
-from .lrk import ALSTM, TCNModel
+from .sequence import ALSTM, TCNModel
 from .lstm import LSTMModel
 from .mlp import MLPModel
 from .transformer import TransformerModel

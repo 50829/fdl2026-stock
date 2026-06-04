@@ -10,17 +10,17 @@ import pandas as pd
 from src.evaluation import BacktestConfig, evaluate_prediction_scores, load_prediction_frame
 from src.evaluation.prediction_io import FINAL_PRED_COLUMNS, save_prediction_frame
 from src.models.fusion import ResidualRankFusionModel, load_residual_rank_fusion, merge_lgb_xgb_predictions
-from src.utils import write_json
+from src.utils import make_run_dir, write_json
 
 
-DEFAULT_MODEL = "outputs/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt"
+DEFAULT_MODEL = "outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt"
 DEFAULT_LGB = {
-    "valid": "outputs/sdd_feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet",
-    "test": "outputs/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet",
+    "valid": "outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet",
+    "test": "outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet",
 }
 DEFAULT_XGB = {
-    "valid": "outputs/sdd_feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet",
-    "test": "outputs/sdd_feature_selection/xgboost_top40/xgboost/test/test_pred.parquet",
+    "valid": "outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet",
+    "test": "outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet",
 }
 
 
@@ -87,7 +87,9 @@ def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", default=DEFAULT_MODEL)
     parser.add_argument("--alpha", type=float, default=1.5)
-    parser.add_argument("--out-root", default="outputs/sdd_final_model_handoff")
+    parser.add_argument("--out-root", default="outputs/models")
+    parser.add_argument("--run-name", default="final_model_handoff")
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
     parser.add_argument("--valid-lgb", default=DEFAULT_LGB["valid"])
     parser.add_argument("--valid-xgb", default=DEFAULT_XGB["valid"])
     parser.add_argument("--test-lgb", default=DEFAULT_LGB["test"])
@@ -105,6 +107,7 @@ def run_cli() -> None:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
+    args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
 
     split_paths = {
         "valid": (args.valid_lgb, args.valid_xgb),

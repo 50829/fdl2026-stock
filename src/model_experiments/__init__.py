@@ -1,1 +1,1 @@
-"""SDD experiment utilities."""
+"""Model experiment command implementations."""

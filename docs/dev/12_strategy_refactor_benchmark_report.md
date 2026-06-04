@@ -128,10 +128,10 @@ strategy_report.md
 回测输出目录默认带时间戳，避免覆盖旧实验：
 
 ```text
-outputs/strategy/strategy_backtest_YYYYMMDD_HHMMSS/
+outputs/strategy/YYYYMMDD_HHMMSS__strategy_backtest/
 ```
 
-可以用 `--run-name` 改变时间戳目录前缀；只有显式传 `--no-timestamp` 时才会直接写入 `--out-root`。
+可以用 `--run-name` 改变目录名中的实验名；只有显式传 `--no-timestamp` 时才会写入 `outputs/strategy/<run_name>/`。
 
 本轮重跑结果目录：
 
@@ -180,8 +180,8 @@ python -m src.pipelines.run_strategy_backtest \
 使用的是我们的最终模型预测文件：
 
 ```text
-outputs/models/sdd_final_model_handoff/valid/valid_pred.parquet
-outputs/models/sdd_final_model_handoff/test/test_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
 ```
 
 选股信号只使用 `pred`。`label_1d` 只用于事后收益计算和只看历史窗口的风险估计，不作为当日选股信号。

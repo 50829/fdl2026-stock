@@ -17,10 +17,10 @@ label_1d__cs_rank + label_1d return + step_days=1
 命令：
 
 ```bash
-python -m src.models.sdd.run_e0_e1 \
+python -m src.model_experiments.run_e0_e1 \
   --experiments e1_daily \
   --stage train eval \
-  --out-root outputs/sdd_daily_pilot
+  --out-root outputs/models/20260530_162345__sequence_daily_pilot
 ```
 
 配置文件：

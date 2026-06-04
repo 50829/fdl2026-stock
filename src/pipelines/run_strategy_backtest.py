@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import warnings
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,34 +20,59 @@ from src.strategy import (
     write_strategy_outputs,
     write_split_plots,
 )
+from src.utils import make_run_dir, read_yaml
 
 
-DEFAULT_PREDS = {
-    "final": {
-        "valid": "outputs/models/sdd_final_model_handoff/valid/valid_pred.parquet",
-        "test": "outputs/models/sdd_final_model_handoff/test/test_pred.parquet",
-    },
-    "lgb_top40": {
-        "valid": "outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet",
-        "test": "outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet",
-    },
-}
+DEFAULT_MODEL_REGISTRY = "configs/registry/models.yaml"
 
 
-FEATURE_COLUMNS = [
-    "log_total_mv__cs_rank",
-    "log_amount__cs_rank",
-    "volatility_20__cs_rank",
-    "turnover_rate__cs_rank",
-]
+def load_model_registry(path: str | Path = DEFAULT_MODEL_REGISTRY) -> dict[str, Any]:
+    registry = read_yaml(path)
+    models = registry.get("models")
+    if not isinstance(models, dict) or not models:
+        raise ValueError(f"model registry `{path}` must define a non-empty `models` mapping")
+    feature_sets = registry.get("feature_sets", {})
+    if feature_sets is not None and not isinstance(feature_sets, dict):
+        raise ValueError(f"model registry `{path}` has invalid `feature_sets`; expected a mapping")
+    return registry
 
 
-def _timestamped_out_root(base: str, run_name: str, no_timestamp: bool) -> Path:
-    base_path = Path(base)
-    if no_timestamp:
-        return base_path
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return base_path / f"{run_name}_{stamp}"
+def registered_model_names(registry: dict[str, Any]) -> list[str]:
+    return sorted(str(name) for name in registry["models"])
+
+
+def resolve_prediction_path(registry: dict[str, Any], model_name: str, split: str) -> str:
+    models = registry["models"]
+    if model_name not in models:
+        choices = ", ".join(registered_model_names(registry))
+        raise ValueError(f"unknown model `{model_name}`; registered models: {choices}")
+    model_cfg = models[model_name]
+    if not isinstance(model_cfg, dict):
+        raise ValueError(f"model `{model_name}` must be a mapping")
+    predictions = model_cfg.get("predictions")
+    if not isinstance(predictions, dict):
+        raise ValueError(f"model `{model_name}` must define a `predictions` mapping")
+    if split not in predictions:
+        choices = ", ".join(sorted(str(name) for name in predictions))
+        raise ValueError(f"model `{model_name}` has no split `{split}`; available splits: {choices}")
+    return str(predictions[split])
+
+
+def resolve_feature_set(registry: dict[str, Any], feature_set: str) -> tuple[str, list[str]]:
+    feature_sets = registry.get("feature_sets", {})
+    if not isinstance(feature_sets, dict) or feature_set not in feature_sets:
+        choices = ", ".join(sorted(str(name) for name in feature_sets)) or "<none>"
+        raise ValueError(f"unknown feature set `{feature_set}`; registered feature sets: {choices}")
+    cfg = feature_sets[feature_set]
+    if not isinstance(cfg, dict):
+        raise ValueError(f"feature set `{feature_set}` must be a mapping")
+    path = cfg.get("path") or cfg.get("feature_path")
+    columns = cfg.get("columns")
+    if not path:
+        raise ValueError(f"feature set `{feature_set}` must define `path`")
+    if not isinstance(columns, list) or not all(isinstance(col, str) for col in columns):
+        raise ValueError(f"feature set `{feature_set}` must define `columns` as a list of strings")
+    return str(path), list(columns)
 
 
 def _select_best(valid_rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -127,13 +151,16 @@ def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-root", default="outputs/strategy")
     parser.add_argument("--run-name", default="strategy_backtest")
-    parser.add_argument("--no-timestamp", action="store_true", help="Write directly to --out-root without creating a timestamped run folder.")
-    parser.add_argument("--models", nargs="+", choices=sorted(DEFAULT_PREDS), default=["final", "lgb_top40"])
+    parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
+    parser.add_argument("--model-registry", default=DEFAULT_MODEL_REGISTRY)
+    parser.add_argument("--models", nargs="+", default=["final", "lgb_top40"])
     parser.add_argument("--splits", nargs="+", choices=["valid", "test"], default=["valid", "test"])
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     parser.add_argument("--score-col", default="pred")
     parser.add_argument("--return-col", default="label_1d")
-    parser.add_argument("--feature-path", default="data/processed/features.parquet")
+    parser.add_argument("--feature-set", default="risk_default")
+    parser.add_argument("--feature-path", default=None, help="Override the feature path from --feature-set.")
+    parser.add_argument("--feature-columns", nargs="+", default=None, help="Override feature columns from --feature-set.")
     parser.add_argument("--no-feature-merge", action="store_true")
     parser.add_argument("--benchmark-path", default=None, help="Optional CSV/parquet index benchmark with trade_date and close/equity/return.")
     parser.add_argument("--benchmark-name", default="benchmark_index")
@@ -144,17 +171,41 @@ def run_cli() -> None:
     parser.add_argument("--linear-scale", action="store_true", help="Use linear equity scale for comparison SVGs.")
     args = parser.parse_args()
 
-    out_root = _timestamped_out_root(args.out_root, args.run_name, args.no_timestamp)
+    try:
+        registry = load_model_registry(args.model_registry)
+        unknown_models = sorted(set(args.models) - set(registered_model_names(registry)))
+        if unknown_models:
+            parser.error(
+                "unknown --models value(s): "
+                + ", ".join(unknown_models)
+                + "; registered models: "
+                + ", ".join(registered_model_names(registry))
+            )
+        feature_path: str | None = None
+        feature_columns: list[str] = []
+        if not args.no_feature_merge:
+            feature_path, feature_columns = resolve_feature_set(registry, args.feature_set)
+            if args.feature_path:
+                feature_path = args.feature_path
+            if args.feature_columns:
+                feature_columns = list(args.feature_columns)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
     grid = build_strategy_grid(cost_bps=args.transaction_cost_bps)
     summary: dict[str, Any] = {
         "out_root": str(out_root),
         "out_parent": args.out_root,
         "run_name": args.run_name,
         "timestamped": not args.no_timestamp,
+        "model_registry": args.model_registry,
         "transaction_cost_bps": float(args.transaction_cost_bps),
         "score_col": args.score_col,
         "return_col": args.return_col,
-        "feature_path": None if args.no_feature_merge else args.feature_path,
+        "feature_set": None if args.no_feature_merge else args.feature_set,
+        "feature_path": feature_path,
+        "feature_columns": feature_columns,
         "plot_scale": "linear" if args.linear_scale else "log",
         "benchmark_path": args.benchmark_path,
         "index_weight_path": args.index_weight_path,
@@ -179,11 +230,11 @@ def run_cli() -> None:
     for model_name in args.models:
         summary["models"][model_name] = {}
         for split in args.splits:
-            pred_path = DEFAULT_PREDS[model_name][split]
+            pred_path = resolve_prediction_path(registry, model_name, split)
             print(json.dumps({"stage": "load", "model": model_name, "split": split, "path": pred_path}, ensure_ascii=False), flush=True)
             df = load_prediction_data(pred_path, score_col=args.score_col, return_col=args.return_col)
             if not args.no_feature_merge:
-                df = merge_feature_columns(df, args.feature_path, FEATURE_COLUMNS)
+                df = merge_feature_columns(df, feature_path, feature_columns)
             split_rows: list[dict[str, Any]] = []
             curves: dict[str, pd.DataFrame] = {}
             benchmark_rows: list[dict[str, Any]] = []

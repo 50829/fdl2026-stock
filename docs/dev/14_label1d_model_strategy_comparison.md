@@ -219,6 +219,6 @@ For 2026-06-02 specifically:
 
 ## Implementation Notes
 
-The `src.models.sdd.*` scripts expose `run_cli()` but do not execute it under `python -m` because they lack a module-level `if __name__ == "__main__": run_cli()`. For this experiment I invoked the underlying functions directly.
+The `src.model_experiments.*` scripts expose `run_cli()` but do not execute it under `python -m` because they lack a module-level `if __name__ == "__main__": run_cli()`. For this experiment I invoked the underlying functions directly.
 
 During initial label1d base-model runs, `raw_return_col == daily_return_col == label_1d` caused duplicate columns when writing parquet predictions. The models had already been saved, so prediction files and summaries were repaired by reloading the saved models and writing deduplicated prediction frames.
