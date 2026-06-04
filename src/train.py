@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,7 @@ from src.data import (
     load_feature_columns,
 )
 from src.models import build_model
+from src.utils import read_yaml
 
 
 def _get_tqdm(enabled: bool):
@@ -259,3 +261,14 @@ def train(cfg: dict):
                 break
 
     _pwrite(tqdm_mod, json.dumps({"saved": str(save_path), "best_epoch": best_epoch, "best_valid_loss": best_loss}, ensure_ascii=False))
+
+
+def run_cli() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True)
+    args = parser.parse_args()
+    train(read_yaml(args.config))
+
+
+if __name__ == "__main__":
+    run_cli()

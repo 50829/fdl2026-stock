@@ -370,3 +370,7 @@ def run_cli() -> None:
     if args.mode in {"oof", "both"}:
         summaries.append(run_oof(args, pcfg, data_feature_cols, base_feature_cols, mlp_feature_cols))
     write_json(Path(args.out_root) / "summary.json", {"experiments": summaries})
+
+
+if __name__ == "__main__":
+    run_cli()

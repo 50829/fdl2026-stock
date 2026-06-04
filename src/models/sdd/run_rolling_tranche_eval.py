@@ -132,3 +132,7 @@ def run_cli() -> None:
         summaries[split] = metrics
         print(json.dumps({"split": split, "metrics": metrics}, ensure_ascii=False), flush=True)
     write_json(out_root / "summary.json", {"splits": summaries})
+
+
+if __name__ == "__main__":
+    run_cli()

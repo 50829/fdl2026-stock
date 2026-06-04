@@ -374,3 +374,7 @@ def run_cli() -> None:
     }
     (processed_dir / "splits.json").write_text(json.dumps(splits, ensure_ascii=False, indent=2), encoding="utf-8")
     write_processed_readme(processed_dir, quality, config, len(feature_columns))
+
+
+if __name__ == "__main__":
+    run_cli()

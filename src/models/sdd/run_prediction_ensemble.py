@@ -8,8 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics
-from src.evaluation import load_prediction_frame
+from src.evaluation import BacktestConfig, evaluate_prediction_scores, load_prediction_frame
 from src.utils import write_json
 
 
@@ -32,24 +31,13 @@ def weight_grid(names: list[str], step: float) -> list[dict[str, float]]:
 
 
 def evaluate(df: pd.DataFrame, label_col: str, raw_return_col: str, daily_return_col: str) -> dict:
-    metrics = {
-        "samples": int(len(df)),
-        "label_col": label_col,
-        "raw_return_col": raw_return_col,
-    }
-    diff = df["pred"].to_numpy(dtype=np.float64) - df[label_col].to_numpy(dtype=np.float64)
-    metrics["mse"] = float(np.mean(diff * diff)) if len(diff) else float("nan")
-    metrics.update(ic_metrics(df, label_col=label_col))
-    metrics.update(
-        backtest_topk(
-            df,
-            return_col=raw_return_col,
-            cfg=BacktestConfig(mode="topk", n_hold=20, k_rotate=5, step_days=5, transaction_cost_bps=5.0),
-        )
-    )
-    rolling = backtest_rolling_tranche(
+    return evaluate_prediction_scores(
         df,
-        cfg=BacktestConfig(
+        label_col=label_col,
+        raw_return_col=raw_return_col,
+        daily_return_col=daily_return_col,
+        topk_cfg=BacktestConfig(mode="topk", n_hold=20, k_rotate=5, step_days=5, transaction_cost_bps=5.0),
+        rolling_cfg=BacktestConfig(
             mode="rolling_tranche",
             tranche_size=4,
             hold_days=5,
@@ -57,8 +45,6 @@ def evaluate(df: pd.DataFrame, label_col: str, raw_return_col: str, daily_return
             transaction_cost_bps=5.0,
         ),
     )
-    metrics.update({f"rolling_{k}": v for k, v in rolling.items()})
-    return metrics
 
 
 def merge_predictions(paths: dict[str, str], label_col: str, raw_return_col: str, daily_return_col: str) -> pd.DataFrame:
@@ -154,3 +140,7 @@ def run_cli() -> None:
         "test_best_by_icir": test.iloc[0].to_dict() if not test.empty else {},
     }
     write_json(out_root / "summary.json", summary)
+
+
+if __name__ == "__main__":
+    run_cli()

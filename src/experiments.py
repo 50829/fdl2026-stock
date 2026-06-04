@@ -15,6 +15,8 @@ class Command:
 COMMANDS: dict[str, Command] = {
     "preprocess": Command("src.data.preprocess", "Build processed parquet data from raw daily files."),
     "feature-meta": Command("src.data.feature_meta", "Build or inspect feature metadata."),
+    "train": Command("src.train", "Train a torch model from a YAML config."),
+    "predict": Command("src.predict", "Generate torch model predictions from a YAML config."),
     "gru": Command("src.models.sdd.run_e0_e1", "Run MLP/GRU baseline experiments."),
     "gru-ablation": Command("src.models.sdd.run_ablation", "Run GRU/TCN ablation experiments."),
     "gbdt": Command("src.models.sdd.run_gbdt", "Train and evaluate LightGBM/XGBoost baselines."),
@@ -25,6 +27,8 @@ COMMANDS: dict[str, Command] = {
     "rolling-eval": Command("src.models.sdd.run_rolling_tranche_eval", "Evaluate a prediction file with rolling tranche metrics."),
     "backtest-sensitivity": Command("src.models.sdd.run_backtest_sensitivity", "Run backtest parameter sensitivity analysis."),
     "final-handoff": Command("src.pipelines.make_final_handoff", "Reproduce final residual-rank model handoff predictions."),
+    "strategy-backtest": Command("src.pipelines.run_strategy_backtest", "Run strategy grid backtests from registered prediction files."),
+    "live-rank": Command("src.pipelines.live_rank", "Generate a live ranking file for one decision date."),
 }
 
 

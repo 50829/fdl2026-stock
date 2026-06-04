@@ -301,3 +301,7 @@ def run_cli() -> None:
     out_root = Path(args.out_root)
     summaries = [run_one(name, split, path, out_root, args) for name, split, path in args.pred]
     write_json(out_root / "summary.json", {"experiments": summaries})
+
+
+if __name__ == "__main__":
+    run_cli()

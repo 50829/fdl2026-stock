@@ -9,6 +9,7 @@ from .prediction_io import (
     prediction_frame,
     save_prediction_frame,
 )
+from .scoring import evaluate_prediction_scores
 
 __all__ = [
     "BASE_PRED_COLUMNS",
@@ -17,6 +18,7 @@ __all__ = [
     "backtest_config_from_cfg",
     "backtest_rolling_tranche",
     "backtest_topk",
+    "evaluate_prediction_scores",
     "ic_metrics",
     "load_prediction_frame",
     "max_drawdown",

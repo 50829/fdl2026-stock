@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from src.data import ProcessedConfig, ProcessedSplit, build_processed_splits, load_feature_columns
-from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, prediction_metrics
+from src.evaluation import BacktestConfig, evaluate_prediction_scores
 from src.utils import write_json
 
 
@@ -190,8 +190,6 @@ def feature_importance(model, model_name: str, feature_cols: list[str]) -> pd.Da
 
 
 def evaluate_predictions(pred_df: pd.DataFrame, label_col: str, args: argparse.Namespace) -> dict:
-    metrics = prediction_metrics(pred_df, label_col=label_col, raw_return_col=args.raw_return_col)
-
     topk_cfg = BacktestConfig(
         mode="topk",
         n_hold=args.n_hold,
@@ -199,8 +197,6 @@ def evaluate_predictions(pred_df: pd.DataFrame, label_col: str, args: argparse.N
         step_days=args.step_days,
         transaction_cost_bps=args.transaction_cost_bps,
     )
-    metrics.update(backtest_topk(pred_df, return_col=args.raw_return_col, cfg=topk_cfg))
-
     rolling_cfg = BacktestConfig(
         mode="rolling_tranche",
         tranche_size=args.tranche_size,
@@ -208,9 +204,14 @@ def evaluate_predictions(pred_df: pd.DataFrame, label_col: str, args: argparse.N
         daily_return_col=args.daily_return_col,
         transaction_cost_bps=args.transaction_cost_bps,
     )
-    rolling = backtest_rolling_tranche(pred_df, cfg=rolling_cfg)
-    metrics.update({f"rolling_{k}": v for k, v in rolling.items()})
-    return metrics
+    return evaluate_prediction_scores(
+        pred_df,
+        label_col=label_col,
+        raw_return_col=args.raw_return_col,
+        daily_return_col=args.daily_return_col,
+        topk_cfg=topk_cfg,
+        rolling_cfg=rolling_cfg,
+    )
 
 
 def save_model(model, model_name: str, path: Path) -> None:
@@ -332,3 +333,7 @@ def run_cli() -> None:
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
     run(args)
+
+
+if __name__ == "__main__":
+    run_cli()

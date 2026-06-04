@@ -194,3 +194,7 @@ def run_cli() -> None:
     )
     grouped.to_csv(out_root / "walkforward_by_scheme.csv", index=False)
     print(json.dumps({"by_scheme": grouped.to_dict(orient="records")}, ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    run_cli()

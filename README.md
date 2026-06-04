@@ -24,8 +24,8 @@ data/           # 原始数据和 processed parquet，默认不提交
 src/data/       # 数据读取、特征、标签、缓存数据集
 src/models/     # 可复用模型定义
 src/models/sdd/ # 实验实现模块，不再作为推荐命令入口
-src/evaluation/ # IC/ICIR、TopK、rolling tranche 等统一评测逻辑
-src/backtest/   # 兼容旧导入路径的回测包装层
+src/evaluation/ # IC/ICIR 和模型评测适配层，回测执行复用 src/strategy
+src/strategy/   # 唯一策略回测引擎，输出 curve/trades/holdings/metrics
 src/pipelines/  # 可复现实验和交接产物生成实现
 outputs/        # 模型、预测、指标产物，默认不提交
 docs/           # 实验记录与报告
@@ -54,6 +54,13 @@ python -m src.experiments --help
 ```
 
 ## 基线模型
+
+通用 Torch 模型可以直接用 YAML 配置训练/预测：
+
+```bash
+python -m src.experiments train --config configs/exp_e0_mlp_5d_rank.yaml
+python -m src.experiments predict --config configs/exp_e0_mlp_5d_rank.yaml
+```
 
 MLP/GRU 主入口：
 
@@ -112,8 +119,24 @@ python -m src.experiments final-handoff --alpha 1.5 --out-root outputs/sdd_final
 
 ## 评测与回测
 
-统一评测函数位于 `src/evaluation/`，实验脚本不再各自维护一套 IC/回测实现。对已有预测文件做回测敏感性分析：
+统一策略回测引擎位于 `src/strategy/`；`src/evaluation/` 只保留模型评测适配层。对已有预测文件做回测敏感性分析：
 
 ```bash
 python -m src.experiments backtest-sensitivity --pred final valid outputs/sdd_final_model_handoff/valid/valid_pred.parquet --pred final test outputs/sdd_final_model_handoff/test/test_pred.parquet
 ```
+
+策略网格回测入口：
+
+```bash
+python -m src.experiments strategy-backtest --models final lgb_top40 --splits valid test --out-root outputs/strategy --run-name strategy_backtest
+```
+
+## Live 交易计划
+
+每日收盘后生成下一交易日排序：
+
+```bash
+python -m src.experiments live-rank --decision-date 20260603 --trade-date 20260604 --out-dir outputs/live/rolling_p10_h5_20260604_from_20260603
+```
+
+可选 `--watchlist watchlist.csv`，文件包含 `ts_code` 和可选 `stock_name`/`name` 列。

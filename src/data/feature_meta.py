@@ -154,3 +154,7 @@ def run_cli() -> None:
             ensure_ascii=False,
         )
     )
+
+
+if __name__ == "__main__":
+    run_cli()

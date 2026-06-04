@@ -5,6 +5,8 @@ import math
 import numpy as np
 import pandas as pd
 
+from src.strategy.metrics import max_drawdown, sharpe as _strategy_sharpe
+
 
 def ic_metrics(pred_df: pd.DataFrame, label_col: str) -> dict[str, float | int]:
     if pred_df.empty:
@@ -53,17 +55,5 @@ def prediction_metrics(pred_df: pd.DataFrame, label_col: str, raw_return_col: st
     return metrics
 
 
-def max_drawdown(equity: np.ndarray) -> float:
-    if len(equity) == 0:
-        return math.nan
-    peak = np.maximum.accumulate(equity)
-    return float((equity / (peak + 1e-12) - 1.0).min())
-
-
 def sharpe_ratio(returns: np.ndarray, periods_per_year: float) -> float:
-    if len(returns) < 2:
-        return math.nan
-    sd = float(np.std(returns, ddof=1))
-    if sd <= 0:
-        return math.nan
-    return float(np.mean(returns) / sd * np.sqrt(periods_per_year))
+    return _strategy_sharpe(returns, periods_per_year)

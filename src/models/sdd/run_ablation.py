@@ -421,3 +421,7 @@ def run_cli() -> None:
     else:
         summaries = [run_ablation(exp, out_root, processed_dir=args.processed_dir, epochs=args.epochs) for exp in args.experiments]
     write_json(out_root / "summary.json", {"experiments": summaries})
+
+
+if __name__ == "__main__":
+    run_cli()

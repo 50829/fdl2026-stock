@@ -482,3 +482,7 @@ def run_cli() -> None:
     if "leaf_embedding" in args.experiments:
         summaries["leaf_embedding"] = run_leaf_embedding(args, out_root)
     write_json(out_root / "summary.json", summaries)
+
+
+if __name__ == "__main__":
+    run_cli()

@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, load_prediction_frame, prediction_metrics
+from src.evaluation import BacktestConfig, evaluate_prediction_scores, load_prediction_frame
 from src.evaluation.prediction_io import FINAL_PRED_COLUMNS, save_prediction_frame
 from src.models.fusion import ResidualRankFusionModel, load_residual_rank_fusion, merge_lgb_xgb_predictions
 from src.utils import write_json
@@ -25,21 +25,19 @@ DEFAULT_XGB = {
 
 
 def evaluate_output(df: pd.DataFrame, args: argparse.Namespace) -> dict[str, Any]:
-    metrics = prediction_metrics(df, label_col=args.target, raw_return_col=args.raw_return_col)
-    topk = backtest_topk(
+    return evaluate_prediction_scores(
         df,
-        return_col=args.raw_return_col,
-        cfg=BacktestConfig(
+        label_col=args.target,
+        raw_return_col=args.raw_return_col,
+        daily_return_col=args.daily_return_col,
+        topk_cfg=BacktestConfig(
             mode="topk",
             n_hold=args.n_hold,
             k_rotate=args.k_rotate,
             step_days=args.step_days,
             transaction_cost_bps=args.transaction_cost_bps,
         ),
-    )
-    rolling = backtest_rolling_tranche(
-        df,
-        cfg=BacktestConfig(
+        rolling_cfg=BacktestConfig(
             mode="rolling_tranche",
             tranche_size=args.tranche_size,
             hold_days=args.hold_days,
@@ -47,9 +45,6 @@ def evaluate_output(df: pd.DataFrame, args: argparse.Namespace) -> dict[str, Any
             transaction_cost_bps=args.transaction_cost_bps,
         ),
     )
-    metrics.update(topk)
-    metrics.update({f"rolling_{k}": v for k, v in rolling.items()})
-    return metrics
 
 
 def build_split(
@@ -126,3 +121,7 @@ def run_cli() -> None:
         lgb_path, xgb_path = split_paths[split]
         summary["splits"][split] = build_split(split, lgb_path, xgb_path, model, args)
     write_json(Path(args.out_root) / "summary.json", summary)
+
+
+if __name__ == "__main__":
+    run_cli()

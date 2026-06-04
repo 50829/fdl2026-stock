@@ -20,7 +20,7 @@ from src.models.fusion import add_meta_prediction_features, load_residual_rank_f
 DATE_RE = re.compile(r"(20\d{6})")
 
 
-MENTIONED = [
+DEFAULT_WATCHLIST = [
     ("新和成", "002001.SZ"),
     ("奥福科技", "688021.SH"),
     ("甘化科工", "000576.SZ"),
@@ -97,23 +97,61 @@ def read_0602_zip(zip_path: Path, end_date: str) -> tuple[list[pd.DataFrame], li
     return daily, metric, moneyflow, st
 
 
-def read_loose_raw(raw_dir: Path, decision_date: str) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], pd.DataFrame | None]:
-    if decision_date < "20260603":
-        return [], [], [], [], None
-    daily = [normalize_csv(pd.read_csv(raw_dir / "daily 20260603.csv"))]
-    metric = [normalize_csv(pd.read_csv(raw_dir / "metric 20260603.csv"))]
-    moneyflow = [normalize_csv(pd.read_csv(raw_dir / "moneyflow 20260603.csv"))]
-    st = [normalize_csv(pd.read_csv(raw_dir / "stock st .csv"))]
-    open_path = raw_dir / "daily open 20260603.csv"
-    open_df = normalize_csv(pd.read_csv(open_path)) if open_path.exists() else None
-    return daily, metric, moneyflow, st, open_df
+def first_existing(paths: list[Path]) -> Path | None:
+    for path in paths:
+        if path.exists():
+            return path
+    return None
+
+
+def read_optional_csv(path: Path | None) -> list[pd.DataFrame]:
+    if path is None:
+        return []
+    return [normalize_csv(pd.read_csv(path))]
+
+
+def read_loose_raw(
+    raw_dir: Path,
+    decision_date: str,
+    trade_date: str,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], pd.DataFrame | None]:
+    daily_path = first_existing([raw_dir / f"daily {decision_date}.csv", raw_dir / f"daily_{decision_date}.csv"])
+    metric_path = first_existing([raw_dir / f"metric {decision_date}.csv", raw_dir / f"metric_{decision_date}.csv"])
+    moneyflow_path = first_existing([raw_dir / f"moneyflow {decision_date}.csv", raw_dir / f"moneyflow_{decision_date}.csv"])
+    st_path = first_existing(
+        [
+            raw_dir / f"stock_st {decision_date}.csv",
+            raw_dir / f"stock st {decision_date}.csv",
+            raw_dir / "stock_st.csv",
+            raw_dir / "stock st .csv",
+        ]
+    )
+    open_path = first_existing(
+        [
+            raw_dir / f"daily open {trade_date}.csv",
+            raw_dir / f"daily open{trade_date}.csv",
+            raw_dir / f"daily_open_{trade_date}.csv",
+        ]
+    )
+    open_df = normalize_csv(pd.read_csv(open_path)) if open_path else None
+    return (
+        read_optional_csv(daily_path),
+        read_optional_csv(metric_path),
+        read_optional_csv(moneyflow_path),
+        read_optional_csv(st_path),
+        open_df,
+    )
 
 
 def concat(frames: list[pd.DataFrame]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def build_panel_from_raw(raw_dir: Path, decision_date: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None, list[str]]:
+def build_panel_from_raw(
+    raw_dir: Path,
+    decision_date: str,
+    trade_date: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None, list[str]]:
     daily_frames = read_zip_group(raw_dir / "0601.zip", "daily", decision_date)
     metric_frames = read_zip_group(raw_dir / "0601.zip", "metric", decision_date)
     moneyflow_frames = read_zip_group(raw_dir / "0601.zip", "moneyflow", decision_date)
@@ -125,7 +163,7 @@ def build_panel_from_raw(raw_dir: Path, decision_date: str) -> tuple[pd.DataFram
     moneyflow_frames.extend(mf2)
     st_frames.extend(st2)
 
-    d3, m3, mf3, st3, open_df = read_loose_raw(raw_dir, decision_date)
+    d3, m3, mf3, st3, open_df = read_loose_raw(raw_dir, decision_date, trade_date)
     daily_frames.extend(d3)
     metric_frames.extend(m3)
     moneyflow_frames.extend(mf3)
@@ -205,12 +243,23 @@ def build_live_universe(panel: pd.DataFrame, st: pd.DataFrame, processed_dir: Pa
     ]
 
 
-def next_trade_date(decision_date: str) -> str:
-    if decision_date == "20260603":
-        return "20260604"
-    if decision_date == "20260602":
-        return "20260603"
+def default_trade_date(decision_date: str) -> str:
     return (pd.Timestamp(decision_date) + pd.Timedelta(days=1)).strftime("%Y%m%d")
+
+
+def load_watchlist(path: str | Path | None) -> pd.DataFrame:
+    if path is None:
+        return pd.DataFrame(DEFAULT_WATCHLIST, columns=["stock_name", "ts_code"])
+    watchlist = pd.read_csv(path)
+    if "ts_code" not in watchlist.columns:
+        raise ValueError(f"Watchlist {path} must contain a ts_code column")
+    if "stock_name" not in watchlist.columns:
+        name_col = "name" if "name" in watchlist.columns else None
+        watchlist["stock_name"] = watchlist[name_col] if name_col else watchlist["ts_code"]
+    out = watchlist[["stock_name", "ts_code"]].copy()
+    out["stock_name"] = out["stock_name"].astype(str)
+    out["ts_code"] = out["ts_code"].astype(str)
+    return out.drop_duplicates("ts_code", keep="first").reset_index(drop=True)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -220,7 +269,8 @@ def run(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    panel, st, open_df, feature_dates = build_panel_from_raw(raw_dir, args.decision_date)
+    trade_date = str(args.trade_date or default_trade_date(args.decision_date))
+    panel, st, open_df, feature_dates = build_panel_from_raw(raw_dir, args.decision_date, trade_date)
     universe = build_live_universe(panel, st, processed_dir, config)
     features, _ = build_features(panel, universe, config)
     live_features = features[features["trade_date"].astype(str) == args.decision_date].copy()
@@ -252,7 +302,6 @@ def run(args: argparse.Namespace) -> None:
         on=["trade_date", "ts_code"],
         how="left",
     )
-    trade_date = next_trade_date(args.decision_date)
     if open_df is not None and "trade_date" in open_df.columns:
         open_df = open_df[open_df["trade_date"].astype(str) == trade_date].copy()
     if open_df is not None and not open_df.empty:
@@ -270,7 +319,7 @@ def run(args: argparse.Namespace) -> None:
     top10["target_weight_top10"] = 0.1
     top10.to_csv(out_dir / f"top10_{args.decision_date}_for_{trade_date}.csv", index=False)
 
-    mentioned = pd.DataFrame(MENTIONED, columns=["stock_name", "ts_code"])
+    mentioned = load_watchlist(args.watchlist)
     mentioned = mentioned.merge(scored, on="ts_code", how="left")
     mentioned["note"] = np.where(mentioned["model_rank"].isna(), f"not in {args.decision_date} candidate universe", "")
     mentioned.to_csv(out_dir / f"mentioned_stock_ranks_{trade_date}.csv", index=False)
@@ -279,7 +328,7 @@ def run(args: argparse.Namespace) -> None:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "decision_date": args.decision_date,
         "trade_date": trade_date,
-        "model": "final = lightgbm_top40 + 1.5 * residual_rank_mlp",
+        "model": args.model_name,
         "candidate_count": int(len(scored)),
         "raw_feature_dates": feature_dates,
         "top10_csv": str(out_dir / f"top10_{args.decision_date}_for_{trade_date}.csv"),
@@ -291,9 +340,10 @@ def run(args: argparse.Namespace) -> None:
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-def main() -> None:
+def run_cli() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--decision-date", required=True)
+    parser.add_argument("--trade-date", default=None, help="Trade date for the generated plan. Defaults to decision_date + 1 calendar day.")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--lgb-model", default="outputs/models/sdd_feature_selection/lightgbm_top40/lightgbm/model.txt")
@@ -301,8 +351,10 @@ def main() -> None:
     parser.add_argument("--fusion-model", default="outputs/models/sdd_fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt")
     parser.add_argument("--alpha", type=float, default=1.5)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--watchlist", default=None, help="Optional CSV with stock_name/name and ts_code columns.")
+    parser.add_argument("--model-name", default="final = lightgbm_top40 + 1.5 * residual_rank_mlp")
     run(parser.parse_args())
 
 
 if __name__ == "__main__":
-    main()
+    run_cli()

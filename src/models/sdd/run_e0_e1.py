@@ -361,3 +361,7 @@ def run_cli() -> None:
             )
         )
     write_json(Path(args.out_root) / "e0_e1_summary.json", {"experiments": summaries})
+
+
+if __name__ == "__main__":
+    run_cli()
