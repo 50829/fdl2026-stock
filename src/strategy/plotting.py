@@ -78,6 +78,38 @@ FAMILY_LABELS = {
 FAMILY_DASHES = ["", "7,4", "2,3", "10,3,2,3", "1,4", "12,4,3,4"]
 VARIANT_SHADES = [0.0, -0.24, 0.26, -0.40, 0.42, -0.12, 0.14, -0.55, 0.58]
 
+MODEL_ORDER = {
+    "label5d_final": 0,
+    "label1d_lgb": 1,
+    "label1d_xgb": 2,
+    "label1d_fusion_valid_alpha": 3,
+}
+
+MODEL_COLORS = {
+    "label5d_final": "#111111",
+    "label1d_lgb": "#D55E00",
+    "label1d_xgb": "#009E73",
+    "label1d_fusion_valid_alpha": "#CC79A7",
+}
+
+MODEL_LABELS = {
+    "label5d_final": "label5d final",
+    "label1d_lgb": "label1d LightGBM",
+    "label1d_xgb": "label1d XGBoost",
+    "label1d_fusion_valid_alpha": "label1d fusion",
+}
+
+STRATEGY_DASHES = {
+    "rolling_p10_h5": "",
+    "rolling_p20_h3": "7,4",
+    "rolling_p20_h5": "2,3",
+    "rolling_p20_h10": "10,3,2,3",
+    "topk20_drop2": "",
+    "topk20_drop3": "7,4",
+    "rankbuf_p20_b30_s100_min2_max10": "",
+    "rankbuf_p20_b50_s100_min2_max10": "7,4",
+}
+
 
 def _hex_to_rgb(color: str) -> tuple[int, int, int]:
     text = color.lstrip("#")
@@ -112,6 +144,8 @@ def _family_variant_color(family: str, variant_idx: int) -> str:
 
 
 def _family_from_name(name: str) -> str:
+    if "__" in name:
+        name = name.split("__", 1)[1]
     if name.startswith("benchmark"):
         return "benchmark"
     prefixes = [
@@ -130,11 +164,26 @@ def _family_from_name(name: str) -> str:
 
 
 def _sort_curve_names(names: list[str]) -> list[str]:
+    if any("__" in name and name.split("__", 1)[0] in MODEL_ORDER for name in names):
+        return sorted(
+            names,
+            key=lambda n: (
+                MODEL_ORDER.get(n.split("__", 1)[0], 99) if "__" in n else 98,
+                FAMILY_ORDER.get(_family_from_name(n), 99),
+                n.split("__", 1)[1] if "__" in n else n,
+            ),
+        )
     return sorted(names, key=lambda n: (FAMILY_ORDER.get(_family_from_name(n), 99), n))
 
 
 def _group_curve_names(names: list[str]) -> list[tuple[str, list[str]]]:
     ordered = _sort_curve_names(names)
+    if any("__" in name and name.split("__", 1)[0] in MODEL_ORDER for name in ordered):
+        groups: dict[str, list[str]] = {}
+        for name in ordered:
+            model = name.split("__", 1)[0] if "__" in name else "other"
+            groups.setdefault(model, []).append(name)
+        return sorted(groups.items(), key=lambda item: (MODEL_ORDER.get(item[0], 99), item[0]))
     groups: dict[str, list[str]] = {}
     for name in ordered:
         groups.setdefault(_family_from_name(name), []).append(name)
@@ -146,6 +195,16 @@ def _style_for_name(name: str, variant_idx: int) -> tuple[str, str, float, float
         return "#111111", "", 2.8, 1.0
     if name == "benchmark_equal_weight_universe":
         return "#666666", "8,4", 2.4, 0.95
+    if "__" in name:
+        model, strategy_name = name.split("__", 1)
+        if model in MODEL_COLORS:
+            base = MODEL_COLORS[model]
+            family = _family_from_name(strategy_name)
+            strategy_variant = sum(ord(ch) for ch in strategy_name) % len(VARIANT_SHADES)
+            color = _family_variant_color("other", strategy_variant) if model == "other" else base
+            dash = STRATEGY_DASHES.get(strategy_name, FAMILY_DASHES[FAMILY_ORDER.get(family, variant_idx) % len(FAMILY_DASHES)])
+            stroke_width = 2.8 if model == "label5d_final" else 2.4
+            return color, dash, stroke_width, 0.96
     family = _family_from_name(name)
     color = _family_variant_color(family, variant_idx)
     dash = FAMILY_DASHES[variant_idx % len(FAMILY_DASHES)]
@@ -224,10 +283,12 @@ def plot_comparison(curves: dict[str, pd.DataFrame], out_path: str | Path, title
         parts.append(f"<text x='{x:.2f}' y='{top + plot_h + 24}' text-anchor='middle' font-size='11' font-family='Arial'>{all_dates[idx]}</text>")
     legend_y = top + 18
     for family, names in grouped_names:
-        header_color = FAMILY_COLORS.get(family, "#444444") if family != "benchmark" else "#222222"
+        model_group = family in MODEL_COLORS
+        header_color = MODEL_COLORS.get(family, FAMILY_COLORS.get(family, "#444444")) if family != "benchmark" else "#222222"
+        header_label = MODEL_LABELS.get(family, FAMILY_LABELS.get(family, family))
         parts.append(
             f"<text x='{left + plot_w + 25}' y='{legend_y}' font-size='11' font-weight='700' "
-            f"font-family='Arial' fill='{header_color}'>{escape(FAMILY_LABELS.get(family, family))}</text>"
+            f"font-family='Arial' fill='{header_color}'>{escape(header_label)}</text>"
         )
         legend_y += 18
         for variant_idx, name in enumerate(names):
@@ -249,7 +310,8 @@ def plot_comparison(curves: dict[str, pd.DataFrame], out_path: str | Path, title
                 f"<line x1='{left + plot_w + 25}' y1='{legend_y - 4}' x2='{left + plot_w + 58}' y2='{legend_y - 4}' "
                 f"stroke='{color}' stroke-width='{max(2.4, stroke_width):.1f}' stroke-linecap='round'{dash_attr}/>"
             )
-            parts.append(f"<text x='{left + plot_w + 66}' y='{legend_y}' font-size='12' font-family='Arial'>{escape(name)}</text>")
+            legend_name = name.split("__", 1)[1] if model_group and "__" in name else name
+            parts.append(f"<text x='{left + plot_w + 66}' y='{legend_y}' font-size='12' font-family='Arial'>{escape(legend_name)}</text>")
             legend_y += 22
     parts.append(f"<text x='{left + plot_w / 2}' y='{height - 18}' text-anchor='middle' font-size='13' font-family='Arial'>trade_date</text>")
     parts.append(f"<text x='18' y='{top + plot_h / 2}' transform='rotate(-90 18,{top + plot_h / 2})' text-anchor='middle' font-size='13' font-family='Arial'>{'Equity (log10 scale)' if use_log else 'Equity'}</text>")
