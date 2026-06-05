@@ -22,7 +22,7 @@ from src.data.processed import _load_cached_feature_frame
 from src.evaluation import backtest_config_from_cfg, backtest_rolling_tranche, backtest_topk, ic_metrics
 from src.models import build_model
 from src.train import train as train_model
-from src.utils import make_run_dir, read_yaml, write_json
+from src.utils import make_run_dir, read_yaml, write_json, write_run_metadata
 
 
 EXPERIMENTS = {
@@ -352,6 +352,7 @@ def run_cli() -> None:
     args = parser.parse_args()
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(out_root, command="gru", args=args)
     summaries = []
     for exp_key in args.experiments:
         summaries.append(

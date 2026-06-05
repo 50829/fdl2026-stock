@@ -19,7 +19,7 @@ from src.models.fusion import DeepMLP, standardize
 from src.model_experiments.run_gbdt import evaluate_predictions, load_tabular_frame, predict_model, train_lightgbm
 from src.model_experiments.run_gbdt_walkforward import resolve_features, year_split
 from src.train import set_seed
-from src.utils import make_run_dir, write_json
+from src.utils import DEFAULT_ARTIFACT_REGISTRY, artifact_path, load_registry, make_run_dir, write_json, write_run_metadata
 
 
 def split_range(name: str, start: str, end: str) -> ProcessedSplit:
@@ -309,9 +309,11 @@ def run_oof(
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
     parser.add_argument("--mode", choices=["frozen", "oof", "both"], default="both")
     parser.add_argument("--processed-dir", default="data/processed")
-    parser.add_argument("--feature-list", default="outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt")
+    parser.add_argument("--feature-list", default=None)
+    parser.add_argument("--feature-list-artifact", default="feature_list.lightgbm_top40")
     parser.add_argument("--base-feature-list", default=None)
     parser.add_argument("--mlp-feature-list", default=None)
     parser.add_argument("--out-root", default="outputs/models")
@@ -357,7 +359,19 @@ def run_cli() -> None:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
+    if not args.feature_list:
+        try:
+            args.feature_list = artifact_path(load_registry(args.artifact_registry), args.feature_list_artifact, source=args.artifact_registry)
+        except ValueError as exc:
+            parser.error(str(exc))
     args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
+    write_run_metadata(
+        args.out_root,
+        command="residual-mlp",
+        args=args,
+        inputs={"feature_list": args.feature_list, "feature_list_artifact": args.feature_list_artifact},
+        registry_paths=[args.artifact_registry],
+    )
 
     pcfg = ProcessedConfig(processed_dir=args.processed_dir)
     base_feature_list = args.base_feature_list if args.base_feature_list is not None else args.feature_list

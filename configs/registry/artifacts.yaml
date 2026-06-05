@@ -1,0 +1,84 @@
+artifacts:
+  feature_list.lightgbm_top40:
+    kind: feature_list
+    path: outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt
+
+  prediction.final.valid:
+    kind: prediction
+    split: valid
+    path: outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+  prediction.final.test:
+    kind: prediction
+    split: test
+    path: outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
+  prediction.lightgbm_top40.valid:
+    kind: prediction
+    split: valid
+    path: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet
+  prediction.lightgbm_top40.test:
+    kind: prediction
+    split: test
+    path: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet
+  prediction.xgboost_top40.valid:
+    kind: prediction
+    split: valid
+    path: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet
+  prediction.xgboost_top40.test:
+    kind: prediction
+    split: test
+    path: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet
+  prediction.sequence_layer1.valid:
+    kind: prediction
+    split: valid
+    path: outputs/models/20260530_103415__sequence_ablation_full/layer1/valid/valid_pred.parquet
+  prediction.sequence_layer1.test:
+    kind: prediction
+    split: test
+    path: outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet
+
+  model.lightgbm_top40:
+    kind: model
+    framework: lightgbm
+    path: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/model.txt
+  model.xgboost_top40:
+    kind: model
+    framework: xgboost
+    path: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/model.json
+  model.residual_rank_alpha_1_5:
+    kind: model
+    framework: torch
+    path: outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
+
+  oof.lightgbm_top40:
+    kind: oof_predictions
+    path: outputs/models/20260531_011103__oof_preds_lgb_top40
+  oof.xgboost_top40:
+    kind: oof_predictions
+    path: outputs/models/20260531_011311__oof_preds_xgb_top40
+
+bundles:
+  final_live:
+    lgb_model: model.lightgbm_top40
+    xgb_model: model.xgboost_top40
+    fusion_model: model.residual_rank_alpha_1_5
+  final_handoff_inputs:
+    fusion_model: model.residual_rank_alpha_1_5
+    valid_lgb: prediction.lightgbm_top40.valid
+    test_lgb: prediction.lightgbm_top40.test
+    valid_xgb: prediction.xgboost_top40.valid
+    test_xgb: prediction.xgboost_top40.test
+  fusion_inputs_top40:
+    feature_list: feature_list.lightgbm_top40
+    lgb_oof_root: oof.lightgbm_top40
+    xgb_oof_root: oof.xgboost_top40
+    valid_lgb: prediction.lightgbm_top40.valid
+    test_lgb: prediction.lightgbm_top40.test
+    valid_xgb: prediction.xgboost_top40.valid
+    test_xgb: prediction.xgboost_top40.test
+  ensemble_inputs:
+    valid_gru: prediction.sequence_layer1.valid
+    test_gru: prediction.sequence_layer1.test
+    valid_lightgbm: prediction.lightgbm_top40.valid
+    test_lightgbm: prediction.lightgbm_top40.test
+    valid_xgboost: prediction.xgboost_top40.valid
+    test_xgboost: prediction.xgboost_top40.test

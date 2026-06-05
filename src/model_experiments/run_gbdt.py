@@ -11,7 +11,18 @@ import pandas as pd
 
 from src.data import ProcessedConfig, ProcessedSplit, build_processed_splits, load_feature_columns
 from src.evaluation import BacktestConfig, evaluate_prediction_scores
-from src.utils import make_run_dir, write_json
+from src.utils import (
+    DEFAULT_ARTIFACT_REGISTRY,
+    DEFAULT_EXPERIMENT_REGISTRY,
+    apply_experiment_defaults,
+    artifact_path,
+    load_registry,
+    make_run_dir,
+    parser_defaults,
+    resolve_experiment,
+    write_json,
+    write_run_metadata,
+)
 
 
 def load_tabular_frame(
@@ -299,6 +310,9 @@ def run(args: argparse.Namespace) -> dict:
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--experiment-registry", default=DEFAULT_EXPERIMENT_REGISTRY)
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
+    parser.add_argument("--experiment", default=None, help="Load defaults from configs/registry/experiments.yaml.")
     parser.add_argument("--model", choices=["lightgbm", "xgboost"], default="lightgbm")
     parser.add_argument("--processed-dir", default="data/processed_pilot")
     parser.add_argument("--out-root", default="outputs/models")
@@ -308,6 +322,7 @@ def run_cli() -> None:
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
     parser.add_argument("--feature-list", default=None, help="Optional newline-delimited feature list.")
+    parser.add_argument("--feature-list-artifact", default=None, help="Artifact key for a newline-delimited feature list.")
     parser.add_argument("--filter-in-universe", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-train-rows", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2026)
@@ -333,8 +348,27 @@ def run_cli() -> None:
     parser.add_argument("--tranche-size", type=int, default=4)
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
+    defaults = parser_defaults(parser)
     args = parser.parse_args()
+    if args.experiment:
+        try:
+            experiment_cfg = resolve_experiment(load_registry(args.experiment_registry), args.experiment, source=args.experiment_registry)
+            apply_experiment_defaults(args, experiment_cfg, defaults)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if args.feature_list_artifact and not args.feature_list:
+        try:
+            args.feature_list = artifact_path(load_registry(args.artifact_registry), args.feature_list_artifact, source=args.artifact_registry)
+        except ValueError as exc:
+            parser.error(str(exc))
     args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
+    write_run_metadata(
+        args.out_root,
+        command="gbdt",
+        args=args,
+        inputs={"feature_list": args.feature_list, "feature_list_artifact": args.feature_list_artifact},
+        registry_paths=[args.experiment_registry, args.artifact_registry],
+    )
     run(args)
 
 

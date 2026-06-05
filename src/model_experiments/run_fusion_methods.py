@@ -21,7 +21,18 @@ from src.models.mlp import MLPModel
 from src.model_experiments.run_gbdt import evaluate_predictions, load_tabular_frame, predict_model, train_lightgbm
 from src.model_experiments.run_gbdt_walkforward import resolve_features
 from src.train import set_seed
-from src.utils import make_run_dir, write_json
+from src.utils import (
+    DEFAULT_ARTIFACT_REGISTRY,
+    DEFAULT_EXPERIMENT_REGISTRY,
+    apply_experiment_defaults,
+    load_registry,
+    make_run_dir,
+    parser_defaults,
+    resolve_bundle,
+    resolve_experiment,
+    write_json,
+    write_run_metadata,
+)
 
 
 def read_pred(path: str | Path, name: str) -> pd.DataFrame:
@@ -402,21 +413,25 @@ def run_leaf_embedding(args: argparse.Namespace, out_root: Path) -> dict:
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--experiment-registry", default=DEFAULT_EXPERIMENT_REGISTRY)
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
+    parser.add_argument("--experiment", default=None, help="Load defaults from configs/registry/experiments.yaml.")
     parser.add_argument("--processed-dir", default="data/processed")
     parser.add_argument("--out-root", default="outputs/models")
     parser.add_argument("--run-name", default="fusion_methods")
     parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
-    parser.add_argument("--feature-list", default="outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt")
+    parser.add_argument("--artifact-bundle", default="fusion_inputs_top40")
+    parser.add_argument("--feature-list", default=None)
     parser.add_argument("--fusion-feature-mode", choices=["meta", "meta_top", "meta_full"], default="meta")
     parser.add_argument("--target", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
-    parser.add_argument("--lgb-oof-root", default="outputs/models/20260531_011103__oof_preds_lgb_top40")
-    parser.add_argument("--xgb-oof-root", default="outputs/models/20260531_011311__oof_preds_xgb_top40")
-    parser.add_argument("--valid-lgb", default="outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet")
-    parser.add_argument("--test-lgb", default="outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet")
-    parser.add_argument("--valid-xgb", default="outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet")
-    parser.add_argument("--test-xgb", default="outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet")
+    parser.add_argument("--lgb-oof-root", default=None)
+    parser.add_argument("--xgb-oof-root", default=None)
+    parser.add_argument("--valid-lgb", default=None)
+    parser.add_argument("--test-lgb", default=None)
+    parser.add_argument("--valid-xgb", default=None)
+    parser.add_argument("--test-xgb", default=None)
     parser.add_argument("--experiments", nargs="+", default=["ridge", "stacking_mlp", "residual_rank", "leaf_embedding"])
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--cpu", action="store_true")
@@ -453,9 +468,43 @@ def run_cli() -> None:
     parser.add_argument("--tranche-size", type=int, default=4)
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
+    defaults = parser_defaults(parser)
     args = parser.parse_args()
+    if args.experiment:
+        try:
+            experiment_cfg = resolve_experiment(load_registry(args.experiment_registry), args.experiment, source=args.experiment_registry)
+            apply_experiment_defaults(args, experiment_cfg, defaults)
+        except ValueError as exc:
+            parser.error(str(exc))
+    try:
+        artifact_registry = load_registry(args.artifact_registry)
+        bundle = resolve_bundle(artifact_registry, args.artifact_bundle, source=args.artifact_registry)
+    except ValueError as exc:
+        parser.error(str(exc))
+    args.feature_list = args.feature_list or bundle["feature_list"]
+    args.lgb_oof_root = args.lgb_oof_root or bundle["lgb_oof_root"]
+    args.xgb_oof_root = args.xgb_oof_root or bundle["xgb_oof_root"]
+    args.valid_lgb = args.valid_lgb or bundle["valid_lgb"]
+    args.test_lgb = args.test_lgb or bundle["test_lgb"]
+    args.valid_xgb = args.valid_xgb or bundle["valid_xgb"]
+    args.test_xgb = args.test_xgb or bundle["test_xgb"]
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(
+        out_root,
+        command="fusion",
+        args=args,
+        inputs={
+            "feature_list": args.feature_list,
+            "lgb_oof_root": args.lgb_oof_root,
+            "xgb_oof_root": args.xgb_oof_root,
+            "valid_lgb": args.valid_lgb,
+            "test_lgb": args.test_lgb,
+            "valid_xgb": args.valid_xgb,
+            "test_xgb": args.test_xgb,
+        },
+        registry_paths=[args.experiment_registry, args.artifact_registry],
+    )
     summaries = {}
     pcfg = ProcessedConfig(args.processed_dir)
     top_feature_cols = resolve_features(pcfg, args.feature_list)

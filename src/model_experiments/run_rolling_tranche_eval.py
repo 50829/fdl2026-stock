@@ -8,13 +8,11 @@ import pandas as pd
 
 from src.data import ProcessedConfig
 from src.evaluation import BacktestConfig, backtest_rolling_tranche, backtest_topk, ic_metrics
-from src.utils import make_run_dir, write_json
+from src.utils import DEFAULT_ARTIFACT_REGISTRY, artifact_path, load_registry, make_run_dir, write_json, write_run_metadata
 
 
-DEFAULT_PRED_PATHS = {
-    "valid": "outputs/models/20260530_103415__sequence_ablation_full/layer1/valid/valid_pred.parquet",
-    "test": "outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet",
-}
+DEFAULT_VALID_PRED_ARTIFACT = "prediction.sequence_layer1.valid"
+DEFAULT_TEST_PRED_ARTIFACT = "prediction.sequence_layer1.test"
 
 
 def attach_label_columns(pcfg: ProcessedConfig, pred_df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -94,9 +92,12 @@ def evaluate_pred_file(
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
     parser.add_argument("--processed-dir", default="data/processed")
-    parser.add_argument("--valid-pred", default=DEFAULT_PRED_PATHS["valid"])
-    parser.add_argument("--test-pred", default=DEFAULT_PRED_PATHS["test"])
+    parser.add_argument("--valid-pred", default=None)
+    parser.add_argument("--test-pred", default=None)
+    parser.add_argument("--valid-pred-artifact", default=DEFAULT_VALID_PRED_ARTIFACT)
+    parser.add_argument("--test-pred-artifact", default=DEFAULT_TEST_PRED_ARTIFACT)
     parser.add_argument("--out-root", default="outputs/models")
     parser.add_argument("--run-name", default="rolling_tranche_eval")
     parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
@@ -109,8 +110,21 @@ def run_cli() -> None:
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
+    try:
+        artifact_registry = load_registry(args.artifact_registry)
+        args.valid_pred = args.valid_pred or artifact_path(artifact_registry, args.valid_pred_artifact, source=args.artifact_registry)
+        args.test_pred = args.test_pred or artifact_path(artifact_registry, args.test_pred_artifact, source=args.artifact_registry)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(
+        out_root,
+        command="rolling-eval",
+        args=args,
+        inputs={"valid_pred": args.valid_pred, "test_pred": args.test_pred},
+        registry_paths=[args.artifact_registry],
+    )
     summaries = {}
     for split, pred in {"valid": args.valid_pred, "test": args.test_pred}.items():
         pred_path = Path(pred)

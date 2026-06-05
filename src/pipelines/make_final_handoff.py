@@ -10,18 +10,21 @@ import pandas as pd
 from src.evaluation import BacktestConfig, evaluate_prediction_scores, load_prediction_frame
 from src.evaluation.prediction_io import FINAL_PRED_COLUMNS, save_prediction_frame
 from src.models.fusion import ResidualRankFusionModel, load_residual_rank_fusion, merge_lgb_xgb_predictions
-from src.utils import make_run_dir, write_json
+from src.utils import (
+    DEFAULT_ARTIFACT_REGISTRY,
+    DEFAULT_EXPERIMENT_REGISTRY,
+    apply_experiment_defaults,
+    load_registry,
+    make_run_dir,
+    parser_defaults,
+    resolve_bundle,
+    resolve_experiment,
+    write_json,
+    write_run_metadata,
+)
 
 
-DEFAULT_MODEL = "outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt"
-DEFAULT_LGB = {
-    "valid": "outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/valid/valid_pred.parquet",
-    "test": "outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet",
-}
-DEFAULT_XGB = {
-    "valid": "outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet",
-    "test": "outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet",
-}
+DEFAULT_ARTIFACT_BUNDLE = "final_handoff_inputs"
 
 
 def evaluate_output(df: pd.DataFrame, args: argparse.Namespace) -> dict[str, Any]:
@@ -85,15 +88,19 @@ def build_split(
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-path", default=DEFAULT_MODEL)
+    parser.add_argument("--experiment-registry", default=DEFAULT_EXPERIMENT_REGISTRY)
+    parser.add_argument("--experiment", default=None, help="Load defaults from configs/registry/experiments.yaml.")
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
+    parser.add_argument("--artifact-bundle", default=DEFAULT_ARTIFACT_BUNDLE)
+    parser.add_argument("--model-path", default=None, help="Override fusion model artifact path.")
     parser.add_argument("--alpha", type=float, default=1.5)
     parser.add_argument("--out-root", default="outputs/models")
     parser.add_argument("--run-name", default="final_model_handoff")
     parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
-    parser.add_argument("--valid-lgb", default=DEFAULT_LGB["valid"])
-    parser.add_argument("--valid-xgb", default=DEFAULT_XGB["valid"])
-    parser.add_argument("--test-lgb", default=DEFAULT_LGB["test"])
-    parser.add_argument("--test-xgb", default=DEFAULT_XGB["test"])
+    parser.add_argument("--valid-lgb", default=None)
+    parser.add_argument("--valid-xgb", default=None)
+    parser.add_argument("--test-lgb", default=None)
+    parser.add_argument("--test-xgb", default=None)
     parser.add_argument("--splits", nargs="+", choices=["valid", "test"], default=["valid", "test"])
     parser.add_argument("--target", default="label_5d__cs_rank")
     parser.add_argument("--raw-return-col", default="label_5d")
@@ -106,8 +113,38 @@ def run_cli() -> None:
     parser.add_argument("--tranche-size", type=int, default=4)
     parser.add_argument("--hold-days", type=int, default=5)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
+    defaults = parser_defaults(parser)
     args = parser.parse_args()
+    if args.experiment:
+        try:
+            experiment_cfg = resolve_experiment(load_registry(args.experiment_registry), args.experiment, source=args.experiment_registry)
+            apply_experiment_defaults(args, experiment_cfg, defaults)
+        except ValueError as exc:
+            parser.error(str(exc))
+    try:
+        artifact_registry = load_registry(args.artifact_registry)
+        bundle = resolve_bundle(artifact_registry, args.artifact_bundle, source=args.artifact_registry)
+    except ValueError as exc:
+        parser.error(str(exc))
+    args.model_path = args.model_path or bundle["fusion_model"]
+    args.valid_lgb = args.valid_lgb or bundle["valid_lgb"]
+    args.valid_xgb = args.valid_xgb or bundle["valid_xgb"]
+    args.test_lgb = args.test_lgb or bundle["test_lgb"]
+    args.test_xgb = args.test_xgb or bundle["test_xgb"]
     args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
+    write_run_metadata(
+        args.out_root,
+        command="final-handoff",
+        args=args,
+        inputs={
+            "fusion_model": args.model_path,
+            "valid_lgb": args.valid_lgb,
+            "valid_xgb": args.valid_xgb,
+            "test_lgb": args.test_lgb,
+            "test_xgb": args.test_xgb,
+        },
+        registry_paths=[args.experiment_registry, args.artifact_registry],
+    )
 
     split_paths = {
         "valid": (args.valid_lgb, args.valid_xgb),

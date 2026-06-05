@@ -16,7 +16,7 @@ from src.data.feature_meta import read_feature_meta, resolve_feature_columns, re
 from src.models import build_model
 from src.train import set_seed
 from src.model_experiments.run_e0_e1 import evaluate_split, resolve_warmup_start
-from src.utils import make_run_dir, write_json
+from src.utils import make_run_dir, write_json, write_run_metadata
 
 
 BASE_CFG = {
@@ -407,6 +407,7 @@ def run_cli() -> None:
     args = parser.parse_args()
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(out_root, command="gru-ablation", args=args, inputs={"feature_list": args.feature_list})
     if args.feature_list:
         base_experiment = args.experiments[0]
         custom_name = args.custom_name or f"{base_experiment}_feature_list"

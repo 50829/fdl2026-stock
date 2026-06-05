@@ -15,11 +15,10 @@ import xgboost as xgb
 from src.data.load import downcast_numeric
 from src.data.preprocess import build_features, load_config
 from src.models.fusion import add_meta_prediction_features, load_residual_rank_fusion
-from src.utils import read_yaml
+from src.utils import DEFAULT_ARTIFACT_REGISTRY, read_yaml, resolve_bundle, write_run_metadata
 
 
 DATE_RE = re.compile(r"(20\d{6})")
-DEFAULT_MODEL_REGISTRY = "configs/registry/models.yaml"
 DEFAULT_LIVE_ARTIFACT = "final_live"
 
 
@@ -267,6 +266,13 @@ def load_watchlist(path: str | Path | None) -> pd.DataFrame:
 
 def resolve_live_artifacts(registry_path: str | Path, artifact_name: str) -> dict[str, str]:
     registry = read_yaml(registry_path)
+    if "bundles" in registry:
+        bundle = resolve_bundle(registry, artifact_name, source=str(registry_path))
+        return {
+            "lgb_model": bundle["lgb_model"],
+            "xgb_model": bundle["xgb_model"],
+            "fusion_model": bundle["fusion_model"],
+        }
     artifacts = registry.get("artifacts")
     if not isinstance(artifacts, dict) or artifact_name not in artifacts:
         choices = ", ".join(sorted(str(name) for name in artifacts)) if isinstance(artifacts, dict) else "<none>"
@@ -287,7 +293,7 @@ def run(args: argparse.Namespace) -> None:
     processed_dir = Path(config["data"]["processed_dir"])
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    artifact_paths = resolve_live_artifacts(args.model_registry, args.artifact_name)
+    artifact_paths = resolve_live_artifacts(args.artifact_registry, args.artifact_name)
     lgb_model_path = args.lgb_model or artifact_paths["lgb_model"]
     xgb_model_path = args.xgb_model or artifact_paths["xgb_model"]
     fusion_model_path = args.fusion_model or artifact_paths["fusion_model"]
@@ -352,7 +358,7 @@ def run(args: argparse.Namespace) -> None:
         "decision_date": args.decision_date,
         "trade_date": trade_date,
         "model": args.model_name,
-        "model_registry": args.model_registry,
+        "artifact_registry": args.artifact_registry,
         "artifact_name": args.artifact_name,
         "lgb_model": lgb_model_path,
         "xgb_model": xgb_model_path,
@@ -365,6 +371,19 @@ def run(args: argparse.Namespace) -> None:
         "features_parquet": str(out_dir / f"live_features_{args.decision_date}.parquet"),
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_run_metadata(
+        out_dir,
+        command="live-rank",
+        args=args,
+        inputs={
+            "lgb_model": lgb_model_path,
+            "xgb_model": xgb_model_path,
+            "fusion_model": fusion_model_path,
+            "raw_feature_dates": feature_dates,
+        },
+        outputs=summary,
+        registry_paths=[args.artifact_registry],
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
@@ -374,7 +393,8 @@ def run_cli() -> None:
     parser.add_argument("--trade-date", default=None, help="Trade date for the generated plan. Defaults to decision_date + 1 calendar day.")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--model-registry", default=DEFAULT_MODEL_REGISTRY)
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
+    parser.add_argument("--model-registry", default=None, help="Deprecated alias for --artifact-registry.")
     parser.add_argument("--artifact-name", default=DEFAULT_LIVE_ARTIFACT)
     parser.add_argument("--lgb-model", default=None, help="Override the LightGBM artifact from --artifact-name.")
     parser.add_argument("--xgb-model", default=None, help="Override the XGBoost artifact from --artifact-name.")
@@ -383,7 +403,10 @@ def run_cli() -> None:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--watchlist", default=None, help="Optional CSV with stock_name/name and ts_code columns.")
     parser.add_argument("--model-name", default="final = lightgbm_top40 + 1.5 * residual_rank_mlp")
-    run(parser.parse_args())
+    args = parser.parse_args()
+    if args.model_registry and args.artifact_registry == DEFAULT_ARTIFACT_REGISTRY:
+        args.artifact_registry = args.model_registry
+    run(args)
 
 
 if __name__ == "__main__":

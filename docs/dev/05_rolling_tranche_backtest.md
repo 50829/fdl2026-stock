@@ -1,6 +1,6 @@
-# 05 Rolling Tranche Backtest
+# 05 滚动分层持仓回测
 
-本文档记录 2026-05-30 对 `label_5d__cs_rank` GRU 信号做的 daily rolling tranche 回测。编号 `05` 用于和 daily GRU pilot 区分。
+本文档记录 2026-05-30 对 `label_5d__cs_rank` GRU 信号做的每日滚动分层持仓回测。编号 `05` 用于和每日调仓 GRU 小样本实验区分。
 
 ## 实验目的
 
@@ -17,7 +17,7 @@
 继续用更强的 label_5d__cs_rank 信号
 每天买入一批股票
 每批持有 5 天
-每天卖出到期 tranche
+每天卖出到期分层
 ```
 
 本实验检验这个策略口径是否比：
@@ -57,7 +57,7 @@ transaction_cost_bps = 5.0
 每天根据 pred 排序
 买入 top tranche_size 只未持仓股票
 每个 tranche 持有 hold_days 天
-每天用 label_1d 计算所有 active positions 的平均收益
+每天用 label_1d 计算所有活跃持仓的平均收益
 扣除买入和到期卖出的交易成本
 ```
 
@@ -87,31 +87,31 @@ outputs/models/20260530_194341__rolling_tranche_eval/summary.json
 
 ## 结果
 
-### 5d 信号质量
+### 5 日信号质量
 
-| split | samples | days | IC | ICIR |
+| 数据集 | 样本数 | 天数 | IC | ICIR |
 | --- | ---: | ---: | ---: | ---: |
 | valid | 766,867 | 242 | 0.095154 | 0.511638 |
 | test | 1,019,298 | 323 | 0.085123 | 0.648694 |
 
-`label_5d__cs_rank` 的排序信号仍然稳定，明显强于上一轮 `label_1d__cs_rank` daily GRU。
+`label_5d__cs_rank` 的排序信号仍然稳定，明显强于上一轮 `label_1d__cs_rank` 每日调仓 GRU。
 
 ### 回测对比
 
-| split | 策略 | periods | total return | annual return | Sharpe | max drawdown | avg turnover |
+| 数据集 | 策略 | 期数 | 总收益 | 年化收益 | Sharpe | 最大回撤 | 平均换手 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| valid | 5d non-overlap TopK | 49 | 0.126012 | 0.129836 | 0.488961 | -0.373277 | 0.510204 |
-| valid | daily rolling tranche | 242 | -0.054890 | -0.057092 | 0.074668 | -0.438514 | 0.395868 |
-| test | 5d non-overlap TopK | 65 | 0.358659 | 0.268270 | 1.248049 | -0.194366 | 0.507692 |
-| test | daily rolling tranche | 323 | 0.875401 | 0.633293 | 2.305933 | -0.124192 | 0.396904 |
+| valid | 5 日非重叠 TopK | 49 | 0.126012 | 0.129836 | 0.488961 | -0.373277 | 0.510204 |
+| valid | 每日 rolling tranche | 242 | -0.054890 | -0.057092 | 0.074668 | -0.438514 | 0.395868 |
+| test | 5 日非重叠 TopK | 65 | 0.358659 | 0.268270 | 1.248049 | -0.194366 | 0.507692 |
+| test | 每日 rolling tranche | 323 | 0.875401 | 0.633293 | 2.305933 | -0.124192 | 0.396904 |
 
 ## 解读
 
 这组结果有明显分化：
 
-- test 上 daily rolling tranche 很强，收益、Sharpe、回撤都优于 5d non-overlap。
-- valid 上 daily rolling tranche 是负收益，且最大回撤更大。
-- 5d IC/ICIR 在 valid/test 都稳定，但把信号转成 daily rolling 策略后，valid 组合收益没有同步变好。
+- test 上每日 rolling tranche 很强，收益、Sharpe、回撤都优于 5d 非重叠回测。
+- valid 上每日 rolling tranche 是负收益，且最大回撤更大。
+- 5d IC/ICIR 在 valid/test 都稳定，但把信号转成每日 rolling 策略后，valid 组合收益没有同步变好。
 
 因此结论不能简单写成 rolling tranche 已经胜出。更准确的判断是：
 

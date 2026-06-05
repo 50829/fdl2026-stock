@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation import BacktestConfig, evaluate_prediction_scores, load_prediction_frame
-from src.utils import make_run_dir, write_json
+from src.utils import DEFAULT_ARTIFACT_REGISTRY, load_registry, make_run_dir, resolve_bundle, write_json, write_run_metadata
 
 
 def load_pred(path: str | Path, name: str) -> pd.DataFrame:
@@ -103,6 +103,8 @@ def run_split(
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-registry", default=DEFAULT_ARTIFACT_REGISTRY)
+    parser.add_argument("--artifact-bundle", default="ensemble_inputs")
     parser.add_argument("--out-root", default="outputs/models")
     parser.add_argument("--run-name", default="ensemble_full")
     parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
@@ -110,15 +112,39 @@ def run_cli() -> None:
     parser.add_argument("--raw-return-col", default="label_5d")
     parser.add_argument("--daily-return-col", default="label_1d")
     parser.add_argument("--grid-step", type=float, default=0.25)
-    parser.add_argument("--valid-gru", default="outputs/models/20260530_103415__sequence_ablation_full/layer1/valid/valid_pred.parquet")
-    parser.add_argument("--test-gru", default="outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet")
-    parser.add_argument("--valid-lightgbm", default="outputs/models/20260530_200734__gbdt_full/lightgbm/valid/valid_pred.parquet")
-    parser.add_argument("--test-lightgbm", default="outputs/models/20260530_200734__gbdt_full/lightgbm/test/test_pred.parquet")
-    parser.add_argument("--valid-xgboost", default="outputs/models/20260530_200734__gbdt_full/xgboost/valid/valid_pred.parquet")
-    parser.add_argument("--test-xgboost", default="outputs/models/20260530_200734__gbdt_full/xgboost/test/test_pred.parquet")
+    parser.add_argument("--valid-gru", default=None)
+    parser.add_argument("--test-gru", default=None)
+    parser.add_argument("--valid-lightgbm", default=None)
+    parser.add_argument("--test-lightgbm", default=None)
+    parser.add_argument("--valid-xgboost", default=None)
+    parser.add_argument("--test-xgboost", default=None)
     args = parser.parse_args()
+    try:
+        bundle = resolve_bundle(load_registry(args.artifact_registry), args.artifact_bundle, source=args.artifact_registry)
+    except ValueError as exc:
+        parser.error(str(exc))
+    args.valid_gru = args.valid_gru or bundle["valid_gru"]
+    args.test_gru = args.test_gru or bundle["test_gru"]
+    args.valid_lightgbm = args.valid_lightgbm or bundle["valid_lightgbm"]
+    args.test_lightgbm = args.test_lightgbm or bundle["test_lightgbm"]
+    args.valid_xgboost = args.valid_xgboost or bundle["valid_xgboost"]
+    args.test_xgboost = args.test_xgboost or bundle["test_xgboost"]
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(
+        out_root,
+        command="prediction-ensemble",
+        args=args,
+        inputs={
+            "valid_gru": args.valid_gru,
+            "test_gru": args.test_gru,
+            "valid_lightgbm": args.valid_lightgbm,
+            "test_lightgbm": args.test_lightgbm,
+            "valid_xgboost": args.valid_xgboost,
+            "test_xgboost": args.test_xgboost,
+        },
+        registry_paths=[args.artifact_registry],
+    )
     valid = run_split(
         "valid",
         {"lightgbm": args.valid_lightgbm, "xgboost": args.valid_xgboost, "gru": args.valid_gru},

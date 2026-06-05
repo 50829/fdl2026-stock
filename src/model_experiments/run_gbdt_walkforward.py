@@ -18,7 +18,7 @@ from src.model_experiments.run_gbdt import (
     train_lightgbm,
     train_xgboost,
 )
-from src.utils import make_run_dir, write_json
+from src.utils import make_run_dir, write_json, write_run_metadata
 
 
 def resolve_features(pcfg: ProcessedConfig, feature_list: str | None) -> list[str]:
@@ -174,6 +174,7 @@ def run_cli() -> None:
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
     args = parser.parse_args()
     args.out_root = str(make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp))
+    write_run_metadata(args.out_root, command="gbdt-walkforward", args=args, inputs={"feature_list": args.feature_list})
 
     pcfg = ProcessedConfig(processed_dir=args.processed_dir)
     feature_cols = resolve_features(pcfg, args.feature_list)

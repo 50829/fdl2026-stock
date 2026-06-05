@@ -7,7 +7,8 @@ from pathlib import Path
 import pandas as pd
 
 from src.evaluation import BacktestConfig, ic_metrics, max_drawdown, sharpe_ratio
-from src.utils import make_run_dir, write_json
+from src.pipelines.run_strategy_backtest import load_model_registry, resolve_prediction_path
+from src.utils import make_run_dir, write_json, write_run_metadata
 
 
 def load_pred(path: str | Path, label_col: str, raw_return_col: str, daily_return_col: str) -> pd.DataFrame:
@@ -270,6 +271,7 @@ def run_one(name: str, split: str, path: str, out_root: Path, args: argparse.Nam
 
 def run_cli() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model-registry", default="configs/registry/models.yaml")
     parser.add_argument("--out-root", default="outputs/models")
     parser.add_argument("--run-name", default="gbdt_sensitivity")
     parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
@@ -293,14 +295,25 @@ def run_cli() -> None:
     args = parser.parse_args()
 
     if not args.pred:
-        args.pred = [
-            ("lightgbm", "valid", "outputs/models/20260530_200734__gbdt_full/lightgbm/valid/valid_pred.parquet"),
-            ("lightgbm", "test", "outputs/models/20260530_200734__gbdt_full/lightgbm/test/test_pred.parquet"),
-            ("xgboost", "valid", "outputs/models/20260530_200734__gbdt_full/xgboost/valid/valid_pred.parquet"),
-            ("xgboost", "test", "outputs/models/20260530_200734__gbdt_full/xgboost/test/test_pred.parquet"),
-        ]
+        try:
+            model_registry = load_model_registry(args.model_registry)
+            args.pred = [
+                ("lightgbm", "valid", resolve_prediction_path(model_registry, "lgb_top40", "valid")),
+                ("lightgbm", "test", resolve_prediction_path(model_registry, "lgb_top40", "test")),
+                ("xgboost", "valid", resolve_prediction_path(model_registry, "xgb_top40", "valid")),
+                ("xgboost", "test", resolve_prediction_path(model_registry, "xgb_top40", "test")),
+            ]
+        except ValueError as exc:
+            parser.error(str(exc))
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(
+        out_root,
+        command="backtest-sensitivity",
+        args=args,
+        inputs={"pred": args.pred},
+        registry_paths=[args.model_registry],
+    )
     summaries = [run_one(name, split, path, out_root, args) for name, split, path in args.pred]
     write_json(out_root / "summary.json", {"experiments": summaries})
 

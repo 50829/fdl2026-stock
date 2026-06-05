@@ -1,4 +1,4 @@
-# Data Preprocessing Plan
+# 数据预处理方案
 
 本文档记录本项目第一版数据预处理主流程。目标是先跑通一个严格无未来信息泄露、可训练、可回测、可每日预测的 A 股截面选股数据管线。
 
@@ -318,7 +318,7 @@ outputs/predictions/pred_YYYYMMDD.csv
 2. 实现基础量价特征和 `T+1 -> T+2`、`T+1 -> T+6` 标签。
 3. 实现截面 rank 与 rolling z-score 两套标准化视角。
 4. 实现 60 日滑动窗口 Dataset，并保留 30 日窗口作为对照。
-5. 接入 MLP baseline、IC 评估和简单 Top-N 回测。
+5. 接入 MLP 基线、IC 评估和简单 Top-N 回测。
 6. 再加入 `metric`、`moneyflow`、中性化或更复杂模型。
 
 ## 最终方案如何确定

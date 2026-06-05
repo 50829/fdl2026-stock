@@ -20,7 +20,7 @@ from src.strategy import (
     write_strategy_outputs,
     write_split_plots,
 )
-from src.utils import make_run_dir, read_yaml
+from src.utils import DEFAULT_STRATEGY_REGISTRY, load_registry, make_run_dir, read_yaml, resolve_strategy_run, write_run_metadata
 
 
 DEFAULT_MODEL_REGISTRY = "configs/registry/models.yaml"
@@ -152,13 +152,15 @@ def run_cli() -> None:
     parser.add_argument("--out-root", default="outputs/strategy")
     parser.add_argument("--run-name", default="strategy_backtest")
     parser.add_argument("--no-timestamp", action="store_true", help="Write to <out-root>/<run-name> instead of timestamping the run directory.")
+    parser.add_argument("--strategy-registry", default=DEFAULT_STRATEGY_REGISTRY)
+    parser.add_argument("--strategy-run", default=None, help="Load defaults from configs/registry/strategies.yaml.")
     parser.add_argument("--model-registry", default=DEFAULT_MODEL_REGISTRY)
-    parser.add_argument("--models", nargs="+", default=["final", "lgb_top40"])
-    parser.add_argument("--splits", nargs="+", choices=["valid", "test"], default=["valid", "test"])
-    parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
-    parser.add_argument("--score-col", default="pred")
-    parser.add_argument("--return-col", default="label_1d")
-    parser.add_argument("--feature-set", default="risk_default")
+    parser.add_argument("--models", nargs="+", default=None)
+    parser.add_argument("--splits", nargs="+", choices=["valid", "test"], default=None)
+    parser.add_argument("--transaction-cost-bps", type=float, default=None)
+    parser.add_argument("--score-col", default=None)
+    parser.add_argument("--return-col", default=None)
+    parser.add_argument("--feature-set", default=None)
     parser.add_argument("--feature-path", default=None, help="Override the feature path from --feature-set.")
     parser.add_argument("--feature-columns", nargs="+", default=None, help="Override feature columns from --feature-set.")
     parser.add_argument("--no-feature-merge", action="store_true")
@@ -170,6 +172,35 @@ def run_cli() -> None:
     parser.add_argument("--no-equal-weight-benchmark", action="store_true")
     parser.add_argument("--linear-scale", action="store_true", help="Use linear equity scale for comparison SVGs.")
     args = parser.parse_args()
+    strategy_cfg: dict[str, Any] = {}
+    if args.strategy_run:
+        try:
+            strategy_registry = load_registry(args.strategy_registry)
+            strategy_cfg = resolve_strategy_run(strategy_registry, args.strategy_run, source=args.strategy_registry)
+        except ValueError as exc:
+            parser.error(str(exc))
+        args.out_root = args.out_root if args.out_root != "outputs/strategy" else str(strategy_cfg.get("out_root", args.out_root))
+        args.run_name = args.run_name if args.run_name != "strategy_backtest" else str(strategy_cfg.get("run_name", args.run_name))
+        args.model_registry = str(strategy_cfg.get("model_registry", args.model_registry))
+        args.models = args.models or list(strategy_cfg.get("models", []))
+        args.splits = args.splits or list(strategy_cfg.get("splits", []))
+        args.feature_set = args.feature_set or strategy_cfg.get("feature_set")
+        args.transaction_cost_bps = args.transaction_cost_bps if args.transaction_cost_bps is not None else strategy_cfg.get("transaction_cost_bps")
+        args.score_col = args.score_col or strategy_cfg.get("score_col")
+        args.return_col = args.return_col or strategy_cfg.get("return_col")
+        benchmarks = strategy_cfg.get("benchmarks", {}) if isinstance(strategy_cfg.get("benchmarks", {}), dict) else {}
+        index_weight = benchmarks.get("index_weight", {}) if isinstance(benchmarks.get("index_weight", {}), dict) else {}
+        if args.index_weight_path == "data/raw/index_weight.zip":
+            args.index_weight_path = str(index_weight.get("weight_path", args.index_weight_path))
+        if args.index_code == "000300.SH":
+            args.index_code = str(index_weight.get("index_code", args.index_code))
+
+    args.models = args.models or ["final", "lgb_top40"]
+    args.splits = args.splits or ["valid", "test"]
+    args.transaction_cost_bps = float(5.0 if args.transaction_cost_bps is None else args.transaction_cost_bps)
+    args.score_col = args.score_col or "pred"
+    args.return_col = args.return_col or "label_1d"
+    args.feature_set = args.feature_set or "risk_default"
 
     try:
         registry = load_model_registry(args.model_registry)
@@ -193,6 +224,13 @@ def run_cli() -> None:
         parser.error(str(exc))
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
+    write_run_metadata(
+        out_root,
+        command="strategy-backtest",
+        args=args,
+        inputs={"strategy_run": args.strategy_run, "strategy_config": strategy_cfg},
+        registry_paths=[args.model_registry, args.strategy_registry],
+    )
     grid = build_strategy_grid(cost_bps=args.transaction_cost_bps)
     summary: dict[str, Any] = {
         "out_root": str(out_root),

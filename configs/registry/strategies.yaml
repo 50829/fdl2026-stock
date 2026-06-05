@@ -1,0 +1,36 @@
+strategy_runs:
+  default_grid:
+    command: strategy-backtest
+    out_root: outputs/strategy
+    run_name: strategy_backtest
+    model_registry: configs/registry/models.yaml
+    models:
+      - final
+      - lgb_top40
+    splits:
+      - valid
+      - test
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    score_col: pred
+    return_col: label_1d
+    benchmarks:
+      equal_weight: true
+      index_weight:
+        enabled: true
+        index_code: 000300.SH
+        weight_path: data/raw/index_weight.zip
+  final_only:
+    command: strategy-backtest
+    out_root: outputs/strategy
+    run_name: final_strategy_backtest
+    model_registry: configs/registry/models.yaml
+    models:
+      - final
+    splits:
+      - valid
+      - test
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    score_col: pred
+    return_col: label_1d

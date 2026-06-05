@@ -1,0 +1,63 @@
+experiments:
+  gbdt_full:
+    command: gbdt
+    out_root: outputs/models
+    run_name: gbdt_full
+    args:
+      processed_dir: data/processed
+      target: label_5d__cs_rank
+      raw_return_col: label_5d
+      daily_return_col: label_1d
+  feature_selection_lightgbm_top40:
+    command: gbdt
+    out_root: outputs/models
+    run_name: feature_selection_lightgbm_top40
+    args:
+      model: lightgbm
+      processed_dir: data/processed
+      feature_list_artifact: feature_list.lightgbm_top40
+  feature_selection_xgboost_top40:
+    command: gbdt
+    out_root: outputs/models
+    run_name: feature_selection_xgboost_top40
+    args:
+      model: xgboost
+      processed_dir: data/processed
+      feature_list_artifact: feature_list.lightgbm_top40
+  fusion_methods:
+    command: fusion
+    out_root: outputs/models
+    run_name: fusion_methods
+    artifact_bundle: fusion_inputs_top40
+    args:
+      processed_dir: data/processed
+      experiments:
+        - residual_rank
+      mlp_arch: deep_ln
+      alpha_grid:
+        - 0.0
+        - 0.25
+        - 0.5
+        - 0.75
+        - 1.0
+        - 1.5
+  final_model_handoff:
+    command: final-handoff
+    out_root: outputs/models
+    run_name: final_model_handoff
+    artifact_bundle: final_handoff_inputs
+    args:
+      alpha: 1.5
+  sequence_ablation_full:
+    command: gru-ablation
+    out_root: outputs/models
+    run_name: sequence_ablation_full
+    args:
+      processed_dir: data/processed
+  rolling_tranche_eval:
+    command: rolling-eval
+    out_root: outputs/models
+    run_name: rolling_tranche_eval
+    args:
+      valid_pred_artifact: prediction.sequence_layer1.valid
+      test_pred_artifact: prediction.sequence_layer1.test

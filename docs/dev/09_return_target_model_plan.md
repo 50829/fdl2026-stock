@@ -47,7 +47,7 @@ LightGBM / XGBoost 本身就是回归模型，完全可以把 target 从 `label_
 
 因此收益率模型应作为补充实验线，而不是直接替换当前最终 rank 模型。
 
-## 3. 不建议直接改 residual-rank
+## 3. 不建议直接改 residual-rank 口径
 
 当前最终 residual-rank 模型公式是：
 
@@ -67,7 +67,7 @@ pred = pred_lgb + alpha * residual_rank_pred
 
 如果目标是输出可解释为收益率的数值，更适合使用 residual-value 架构。
 
-## 4. 推荐主线：Residual-value 收益率模型
+## 4. 推荐主线：残差数值收益率模型
 
 收益率版本的 residual-value 思路：
 
@@ -88,7 +88,7 @@ final_pred = base_pred + alpha * residual_pred
 
 ## 5. 计划训练哪些模型
 
-### 5.1 第一组：纯树模型收益率 baseline
+### 5.1 第一组：纯树模型收益率基线
 
 先训练：
 
@@ -100,7 +100,7 @@ XGBoost top40 -> label_5d
 目的：
 
 - 验证 `label_5d` 是否可以直接拟合。
-- 得到收益率目标下的强 baseline。
+- 得到收益率目标下的强基线。
 - 为后续 stacking / residual-value 提供 base prediction。
 - 对比 raw return 目标和 rank target 的 IC/ICIR、MSE、回测收益。
 
@@ -110,7 +110,7 @@ XGBoost top40 -> label_5d
 pred = 预测未来 5 日收益率
 ```
 
-### 5.2 第二组：收益率 residual-value MLP
+### 5.2 第二组：收益率残差数值 MLP
 
 训练两版：
 
@@ -144,7 +144,7 @@ rank_diff
 - 和当前 residual-rank 方法对比。
 - 形成一个输出单位更接近收益率的融合模型。
 
-### 5.3 第三组：收益率 stacking
+### 5.3 第三组：收益率堆叠模型
 
 训练：
 
@@ -220,10 +220,10 @@ IC with label_5d
 ICIR with label_5d
 IC with label_5d__cs_rank
 ICIR with label_5d__cs_rank
-top-k return
+top-k 收益
 top-k Sharpe
 top-k maxDD
-rolling return
+rolling 收益
 rolling Sharpe
 rolling maxDD
 ```
@@ -237,7 +237,7 @@ rolling maxDD
 
 ## 9. 训练命令草案
 
-### 9.1 LightGBM 收益率 baseline
+### 9.1 LightGBM 收益率基线
 
 ```bash
 python -m src.model_experiments.run_gbdt \
@@ -254,7 +254,7 @@ python -m src.model_experiments.run_gbdt \
   --log-period 200
 ```
 
-### 9.2 XGBoost 收益率 baseline
+### 9.2 XGBoost 收益率基线
 
 ```bash
 python -m src.model_experiments.run_gbdt \
@@ -271,7 +271,7 @@ python -m src.model_experiments.run_gbdt \
   --log-period 200
 ```
 
-### 9.3 Residual-value MLP 收益率模型
+### 9.3 残差数值 MLP 收益率模型
 
 ```bash
 python -m src.model_experiments.run_residual_mlp \
@@ -309,8 +309,8 @@ outputs/models/return_residual_mlp_deep_ln
 
 后续正式跑之前建议：
 
-- 先单独跑 LightGBM / XGBoost 收益率 baseline。
-- 确认 raw return target 的训练耗时和结果。
+- 先单独跑 LightGBM / XGBoost 收益率基线。
+- 确认原始收益目标的训练耗时和结果。
 - 对 `label_5d` 做分布检查。
 - 必要时对 `label_5d` 做 winsorize / clip，再训练收益率模型。
 
@@ -322,7 +322,7 @@ outputs/models/return_residual_mlp_deep_ln
 
 - MSE/MAE 表现合理。
 - IC/ICIR 不低于当前 rank 模型。
-- rolling return 或风险指标更好。
+- rolling 收益或风险指标更好。
 - 输出能稳定解释为预测收益率。
 
 则可以考虑让收益率模型成为策略侧新主模型。
@@ -349,6 +349,6 @@ Residual-rank deep_ln, alpha=1.5
 
 1. 保留 `Residual-rank deep_ln, alpha=1.5` 作为交接主模型。
 2. 新开收益率目标实验线。
-3. 先跑树模型收益率 baseline。
+3. 先跑树模型收益率基线。
 4. 再跑收益率 residual-value MLP。
 5. 最后用 IC/ICIR 和策略回测共同决定是否切换。

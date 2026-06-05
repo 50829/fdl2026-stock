@@ -4,7 +4,17 @@ from pathlib import Path
 
 from src.pipelines.normalize_outputs import discover_moves, normalize_live_dir_name, normalize_run_dir_name
 from src.pipelines.run_strategy_backtest import load_model_registry, resolve_feature_set, resolve_prediction_path
-from src.utils import format_run_dir_name, make_run_dir, slugify_run_name
+from src.utils import (
+    artifact_path,
+    format_run_dir_name,
+    load_registry,
+    make_run_dir,
+    resolve_bundle,
+    resolve_experiment,
+    resolve_strategy_run,
+    slugify_run_name,
+    write_run_metadata,
+)
 
 
 def test_run_dir_helpers_use_timestamp_prefix_and_sanitized_names(tmp_path) -> None:
@@ -39,6 +49,77 @@ feature_sets:
         "data/processed/features.parquet",
         ["log_total_mv__cs_rank", "turnover_rate__cs_rank"],
     )
+
+
+def test_artifact_bundle_registry_resolves_paths(tmp_path) -> None:
+    registry_path = tmp_path / "artifacts.yaml"
+    registry_path.write_text(
+        """
+artifacts:
+  pred.demo:
+    path: outputs/models/demo/test.parquet
+  model.demo:
+    path: outputs/models/demo/model.pt
+bundles:
+  demo:
+    pred: pred.demo
+    model: model.demo
+""",
+        encoding="utf-8",
+    )
+    registry = load_registry(registry_path)
+
+    assert artifact_path(registry, "pred.demo", source=str(registry_path)) == "outputs/models/demo/test.parquet"
+    assert resolve_bundle(registry, "demo", source=str(registry_path)) == {
+        "pred": "outputs/models/demo/test.parquet",
+        "model": "outputs/models/demo/model.pt",
+    }
+
+
+def test_experiment_and_strategy_registries_resolve_named_entries(tmp_path) -> None:
+    experiments = tmp_path / "experiments.yaml"
+    experiments.write_text(
+        """
+experiments:
+  demo:
+    command: gbdt
+    run_name: demo_run
+""",
+        encoding="utf-8",
+    )
+    strategies = tmp_path / "strategies.yaml"
+    strategies.write_text(
+        """
+strategy_runs:
+  demo:
+    command: strategy-backtest
+    models:
+      - final
+""",
+        encoding="utf-8",
+    )
+
+    assert resolve_experiment(load_registry(experiments), "demo", source=str(experiments))["run_name"] == "demo_run"
+    assert resolve_strategy_run(load_registry(strategies), "demo", source=str(strategies))["models"] == ["final"]
+
+
+def test_write_run_metadata_records_args_inputs_and_registry_snapshot(tmp_path) -> None:
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("key: value\n", encoding="utf-8")
+    out_dir = tmp_path / "run"
+
+    meta_path = write_run_metadata(
+        out_dir,
+        command="demo",
+        args={"alpha": 1.5},
+        inputs={"pred": Path("pred.parquet")},
+        registry_paths=[registry],
+    )
+
+    text = meta_path.read_text(encoding="utf-8")
+    assert '"command": "demo"' in text
+    assert '"alpha": 1.5' in text
+    assert str(registry) in text
 
 
 def test_normalize_live_dir_name_converts_legacy_patterns() -> None:

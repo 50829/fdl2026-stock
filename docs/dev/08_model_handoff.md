@@ -45,7 +45,7 @@ outputs/models/20260531_162154__final_model_handoff/summary.json
 
 训练和评估切分：
 
-| split | 日期范围 | 用途 |
+| 数据集 | 日期范围 | 用途 |
 | --- | --- | --- |
 | residual-rank MLP train | `20210101-20231231` | 使用 OOF 的 LGB/XGB meta prediction 训练残差排序网络 |
 | valid | `20240102-20241231` | 选 alpha 和调参 |
@@ -154,10 +154,10 @@ pred = final_pred = pred_lgb + 1.5 * residual_rank_pred
 
 | 模型 | 路径 | 用途 | 是否最终推荐 |
 | --- | --- | --- | --- |
-| GRU layer1 baseline | `outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet` | 深度学习 baseline | 否 |
-| MLP baseline | `outputs/models/20260530_103903__final_test_eval/mlp_baseline/test/test_pred.parquet` | 非序列深度学习 baseline | 否 |
-| LightGBM top40 | `outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet` | 最强纯树模型 baseline | 作为强 baseline |
-| XGBoost top40 | `outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet` | 纯树模型 baseline | 否 |
+| GRU layer1 基线 | `outputs/models/20260530_103903__final_test_eval/layer1/test/test_pred.parquet` | 深度学习基线 | 否 |
+| MLP 基线 | `outputs/models/20260530_103903__final_test_eval/mlp_baseline/test/test_pred.parquet` | 非序列深度学习基线 | 否 |
+| LightGBM top40 | `outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet` | 最强纯树模型基线 | 作为强基线 |
+| XGBoost top40 | `outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet` | 纯树模型基线 | 否 |
 | Residual-rank deep_ln alpha=1.5 | `outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet` | 最终融合模型 | 是 |
 
 对应模型文件：
@@ -170,19 +170,19 @@ pred = final_pred = pred_lgb + 1.5 * residual_rank_pred
 
 ## 6. 模型结果对比
 
-最终模型和两个关键 baseline 的 test 结果：
+最终模型和两个关键基线的 test 结果：
 
-| 模型 | 是否包含深度网络 | test IC | test ICIR | top-k return | top-k Sharpe | top-k maxDD | rolling return | rolling Sharpe | rolling maxDD |
+| 模型 | 是否包含深度网络 | test IC | test ICIR | top-k 收益 | top-k Sharpe | top-k 最大回撤 | rolling 收益 | rolling Sharpe | rolling 最大回撤 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| GRU layer1 baseline | 是 | 0.085123 | 0.648694 | 0.358659 | - | - | 0.875401 | - | - |
-| LightGBM top40 baseline | 否 | 0.106769 | 0.817390 | 6.346443 | 2.830258 | -0.142791 | 5.413240 | 6.594812 | -0.070443 |
+| GRU layer1 基线 | 是 | 0.085123 | 0.648694 | 0.358659 | - | - | 0.875401 | - | - |
+| LightGBM top40 基线 | 否 | 0.106769 | 0.817390 | 6.346443 | 2.830258 | -0.142791 | 5.413240 | 6.594812 | -0.070443 |
 | Residual-rank deep_ln, alpha=1.5 | 是 | 0.106807 | 0.821452 | 4.424243 | 4.261833 | -0.083557 | 4.330470 | 6.013328 | -0.069576 |
 
 解读：
 
-- 最终模型相比 GRU baseline 明显更强。
+- 最终模型相比 GRU 基线明显更强。
 - 最终模型相比 LightGBM top40，IC/ICIR 小幅更高。
-- LightGBM top40 的简单 rolling return 仍更高。
+- LightGBM top40 的简单 rolling 收益仍更高。
 - 最终模型的 top-k Sharpe 和 top-k maxDD 更好，风险特征更稳。
 
 ## 7. 如何重新生成最终预测
@@ -250,22 +250,22 @@ outputs/models/20260531_162154__final_model_handoff/
 2. 按 `pred` 降序排序。
 3. 选 top K 股票。
 4. 每日生成交易列表。
-5. 单笔持有多天，例如 hold 5 days。
+5. 单笔持有多天，例如持有 5 天。
 
 建议先对这些参数做敏感性测试：
 
 | 参数 | 候选值 |
 | --- | --- |
 | top K | `10 / 20 / 50` |
-| hold days | `3 / 5 / 10` |
+| 持有天数 | `3 / 5 / 10` |
 | 调仓频率 | 每日 |
 | 交易成本 | `5 bps` 起步 |
 
 当前简单回测说明：
 
-- LightGBM top40 在当前 rolling return 上更高。
+- LightGBM top40 在当前 rolling 收益上更高。
 - Final fusion model 在 ICIR 和 top-k 风险指标上更好。
-- 因此策略侧不要只用一个固定 topK 策略定结论，应该做 topK 和 hold days 的敏感性测试。
+- 因此策略侧不要只用一个固定 topK 策略定结论，应该做 topK 和持有天数的敏感性测试。
 
 ## 9. 常见问题
 
@@ -313,7 +313,7 @@ docs/dev/07_后续模型实验记录.md
 用途：
 
 - `08_model_handoff.md` 是策略端优先阅读的交接文档。
-- `07_后续模型实验记录.md` 用于追溯模型选择、alpha 调参、baseline 对比和实验过程。
+- `07_后续模型实验记录.md` 用于追溯模型选择、alpha 调参、基线对比和实验过程。
 
 ### 10.2 最终模型和最终预测
 
@@ -338,7 +338,7 @@ outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/resid
 - `residual_rank_mlp.pt` 是最终深度融合模型参数。
 - `outputs/models/20260531_121653__fusion_rank_tune/` 保留了 alpha 和结构调参结果，方便复核为什么最终选 `alpha=1.5`。
 
-### 10.3 关键 baseline
+### 10.3 关键基线
 
 ```text
 outputs/models/20260530_205006__feature_selection/lightgbm_top40/
@@ -351,10 +351,10 @@ outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt
 
 用途：
 
-- `lightgbm_top40` 是最强纯树模型 baseline，也是最终融合模型的主 base model。
+- `lightgbm_top40` 是最强纯树模型基线，也是最终融合模型的主基模型。
 - `xgboost_top40` 是最终融合模型的另一个 meta input。
-- `layer1` / `e1_gru_5d_rank` 是 GRU baseline，用于体现深度学习基线。
-- `mlp_baseline` 是非序列深度学习 baseline。
+- `layer1` / `e1_gru_5d_rank` 是 GRU 基线，用于体现深度学习基线。
+- `mlp_baseline` 是非序列深度学习基线。
 - `lightgbm_top40.txt` 是 top40 特征列表，用于复现实验。
 
 ### 10.4 代码和配置
@@ -414,7 +414,7 @@ trade_date, ts_code, pred
 
 4. 每天按 `pred` 降序排序，生成候选股票列表。
 
-5. 如果要对比 baseline，再读取：
+5. 如果要对比基线，再读取：
 
 ```text
 outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/test/test_pred.parquet

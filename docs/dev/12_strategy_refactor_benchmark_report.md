@@ -59,7 +59,7 @@ python -m src.pipelines.run_strategy_backtest \
   --benchmark-name hs300
 ```
 
-外部点位基线文件需要包含 `trade_date`，并至少包含 `equity`、`return`、`close`、`adj_close`、`price`、`nav` 之一。管线会按当前 valid/test split 的交易日对齐外部基线，避免策略和指数使用不同时间区间计算指标。
+外部点位基线文件需要包含 `trade_date`，并至少包含 `equity`、`return`、`close`、`adj_close`、`price`、`nav` 之一。管线会按当前 valid/test 切分的交易日对齐外部基线，避免策略和指数使用不同时间区间计算指标。
 
 ## 2. 代码结构统一
 
@@ -111,7 +111,7 @@ holdings.csv
 metrics.json
 ```
 
-每个模型和 split 汇总输出：
+每个模型和切分汇总输出：
 
 ```text
 strategy_metrics.csv
@@ -190,14 +190,14 @@ outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
 
 沪深 300 权重基线：
 
-| split | total_return | sharpe | max_drawdown |
+| 数据集 | 总收益 | Sharpe | 最大回撤 |
 | --- | ---: | ---: | ---: |
 | valid | 0.1044 | 0.5859 | -0.1497 |
 | test | 0.2731 | 1.3193 | -0.1053 |
 
 等权股票池基线：
 
-| split | total_return | sharpe | max_drawdown |
+| 数据集 | 总收益 | Sharpe | 最大回撤 |
 | --- | ---: | ---: | ---: |
 | valid | -0.0487 | 0.0290 | -0.2802 |
 | test | 0.5604 | 1.6879 | -0.1706 |
@@ -222,7 +222,7 @@ rolling_p10_h5
 
 ## 7. 拆分图与风险预算策略更新
 
-本轮进一步改进画图逻辑，不再只输出一张全策略大图。每个 split 现在输出：
+本轮进一步改进画图逻辑，不再只输出一张全策略大图。每个切分现在输出：
 
 ```text
 equity_overview.svg
@@ -272,7 +272,7 @@ outputs/strategy/risk_budget_plot_refactor_20260601_003245/
 
 风险预算策略结果：
 
-| split | 策略 | total_return | Sharpe | max_drawdown | avg_turnover |
+| 数据集 | 策略 | 总收益 | Sharpe | 最大回撤 | 平均换手 |
 | --- | --- | ---: | ---: | ---: | ---: |
 | valid | `riskbudget_p20_top150_keep80_b40_s120_pen25` | 0.8769 | 1.8754 | -0.4302 | 0.5959 |
 | valid | `riskbudget_p20_top200_keep100_b50_s150_pen35` | 0.6462 | 1.6134 | -0.3938 | 0.4576 |

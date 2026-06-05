@@ -7,7 +7,7 @@
 本项目不建模为单只股票价格预测，而建模为每日截面排序任务：
 
 ```text
-输入：某只股票过去 lookback 个交易日的 112 维特征序列
+输入：某只股票过去若干个交易日的 112 维特征序列
 输出：该股票在当前 trade_date 的预测 score
 目标：score 在每日截面上尽量与未来收益排序一致
 ```
@@ -47,11 +47,11 @@ GRU 在股票预测中通常作为时间编码器使用。常见结构包括：
 
 1. Vanilla GRU
 
-   直接输入过去若干交易日的多因子序列，用最后一个 hidden state 预测股票分数。
+   直接输入过去若干交易日的多因子序列，用最后一个隐状态预测股票分数。
 
 2. GRU + Temporal Attention
 
-   GRU 负责提取时间状态，attention 负责选择关键时间步。适合金融时间序列中“近期冲击”和“中期趋势”重要性不固定的情况。
+   GRU 负责提取时间状态，注意力层负责选择关键时间步。适合金融时间序列中“近期冲击”和“中期趋势”重要性不固定的情况。
 
 3. CNN/TCN + GRU
 
@@ -69,7 +69,7 @@ GRU 在股票预测中通常作为时间编码器使用。常见结构包括：
 
 ```text
 X: [batch_size, lookback, n_features]
-默认 lookback = 60
+默认回看窗口 = 60
 默认 n_features = 112
 ```
 
@@ -86,7 +86,7 @@ Input [B, T, F]
 GRU(input_size=d_model, hidden_size=hidden, num_layers=2)
   |
   |-- temporal outputs: [B, T, H]
-  |-- last hidden:      [B, H]
+  |-- 最后隐状态:      [B, H]
   |
 Temporal Attention
   |
@@ -113,11 +113,11 @@ score [B]
 | `batch_size` | 512 或 1024 | 根据显存调整 |
 | `lr` | 1e-3 | AdamW 初始学习率 |
 | `weight_decay` | 1e-4 | L2 正则 |
-| `epochs` | 20 | 配合 early stopping |
+| `epochs` | 20 | 配合早停 |
 
 ## 对照模型
 
-为了报告完整，至少保留三类 baseline：
+为了报告完整，至少保留三类基线：
 
 | 模型 | 输入 | 目的 |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ score [B]
 
 ## 损失函数
 
-第一版推荐使用 Huber loss：
+第一版推荐使用 Huber 损失：
 
 ```text
 loss = SmoothL1Loss(score, label_5d__cs_rank)
@@ -144,7 +144,7 @@ loss = SmoothL1Loss(score, label_5d__cs_rank)
 原因：
 
 - rank label 范围约为 `[-1, 1]`。
-- Huber loss 比 MSE 对异常样本更稳。
+- Huber 损失比 MSE 对异常样本更稳。
 - 实现简单，训练稳定。
 
 第二版可以增加每日截面相关性损失：
@@ -154,7 +154,7 @@ loss = SmoothL1Loss + lambda * CorrLoss
 CorrLoss = 1 - PearsonCorr(score, label)
 ```
 
-注意：`CorrLoss` 应按 `trade_date` 分组计算，工程复杂度更高。第一版可以只训练 Huber loss，在验证阶段计算 IC。
+注意：`CorrLoss` 应按 `trade_date` 分组计算，工程复杂度更高。第一版可以只训练 Huber 损失，在验证阶段计算 IC。
 
 ## 数据集构造
 
@@ -195,10 +195,10 @@ test:  20250101 - 20260518
 
 训练阶段记录：
 
-- train loss
-- valid loss
+- 训练损失
+- 验证损失
 - learning rate
-- best epoch
+- 最佳 epoch
 
 验证和测试阶段记录：
 
@@ -234,13 +234,13 @@ test:  20250101 - 20260518
 
 | 实验 | 改动 | 目的 |
 | --- | --- | --- |
-| E00 | MLP baseline | 检验非时序基线 |
-| E01 | VanillaGRU, lookback=60 | GRU 基线 |
-| E02 | AttentiveGRU, lookback=60 | 主模型 |
-| E03 | AttentiveGRU, lookback=20 | 检查短窗口 |
-| E04 | AttentiveGRU, lookback=40 | 检查中窗口 |
-| E05 | AttentiveGRU, hidden=64 | 检查模型容量 |
-| E06 | AttentiveGRU, hidden=256 | 检查过拟合风险 |
+| E00 | MLP 基线 | 检验非时序基线 |
+| E01 | VanillaGRU，回看窗口=60 | GRU 基线 |
+| E02 | AttentiveGRU，回看窗口=60 | 主模型 |
+| E03 | AttentiveGRU，回看窗口=20 | 检查短窗口 |
+| E04 | AttentiveGRU，回看窗口=40 | 检查中窗口 |
+| E05 | AttentiveGRU，隐状态维度=64 | 检查模型容量 |
+| E06 | AttentiveGRU，隐状态维度=256 | 检查过拟合风险 |
 | E07 | 目标改为 `label_1d__cs_rank` | 短周期对照 |
 | E08 | 去掉 moneyflow 特征组 | 特征组消融 |
 | E09 | 去掉 fundamental_size 特征组 | 特征组消融 |
@@ -262,7 +262,7 @@ src/model_experiments/
   config.yaml            # GRU 默认实验配置
   dataset.py             # SequenceDataset / DataModule
   model.py               # MLP, VanillaGRU, AttentiveGRU
-  losses.py              # Huber loss, optional CorrLoss
+  losses.py              # Huber 损失，可选 CorrLoss
   train.py               # 训练入口
   predict.py             # 生成预测分数
   evaluate.py            # IC、ICIR、loss 评估
@@ -373,25 +373,25 @@ output:
 - 本任务是每日截面排序，不是单股票价格点预测。
 - 特征只使用当日盘后及历史信息，标签从 `T+1` 买入开始，避免未来信息泄露。
 - 训练、验证、测试严格按时间切分。
-- GRU 用于捕捉单只股票的时间动态，attention 用于学习不同历史交易日的重要性。
-- 最终以 IC 和模拟交易指标评价模型，而不是只看 loss。
+- GRU 用于捕捉单只股票的时间动态，注意力层用于学习不同历史交易日的重要性。
+- 最终以 IC 和模拟交易指标评价模型，而不是只看损失。
 
 # 下一步实验
 1. 先做 GRU + LayerNorm 对照实验
     当前最好的模型是 layer1 + attention + SmoothL1 +
-    lookback=60，但还没加 LayerNorm。
+    回看窗口=60，但还没加 LayerNorm。
     我会加几组最小改动实验：
   - layer1_baseline：当前最优 GRU，不变
   - layer1_input_layernorm：对输入特征做 LayerNorm
-  - layer1_hidden_layernorm：对 GRU 输出 hidden 做
+  - layer1_hidden_layernorm：对 GRU 输出隐状态做
     LayerNorm
-  - layer1_input_hidden_layernorm：输入和 hidden 都
+  - layer1_input_hidden_layernorm：输入和隐状态都
     做 LayerNorm
 
     先跑 pilot，看 IC/ICIR 趋势；如果提升稳定，再全量
     训练。
 2. 保持实验变量干净
-    这次只改 LayerNorm，不同时改 loss、lookback、
+    这次只改 LayerNorm，不同时改损失函数、回看窗口、
     feature set。否则看不清楚到底是谁带来的变化。
 3. 指标主要看 IC / ICIR
     排序优先级我建议是：
@@ -412,7 +412,7 @@ output:
     如果 LayerNorm 有用：继续做 GRU 稳定性改进，比如
     dropout、weight decay、hidden size 小范围调参。
     如果 LayerNorm 没用：转向 LightGBM/融合方案，先做
-    一个传统强 baseline，再考虑神经网络输出作为额外特
+    一个传统强基线，再考虑神经网络输出作为额外特
     征。
 
 下一步优先改 src/models/sequence/alstm.py，给当前 GRU/ALSTM

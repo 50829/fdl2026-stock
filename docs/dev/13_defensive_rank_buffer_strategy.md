@@ -1,4 +1,4 @@
-# 13 防守型 rank buffer 策略记录
+# 13 防守型排名缓冲策略记录
 
 本文记录本轮新增的防守型策略，用来处理 2024 年初小盘、低流动性股票集中下跌带来的组合回撤问题。
 
@@ -152,7 +152,7 @@ outputs/strategy/defensive_filter_20260601_005706/final/test/plots_by_family/def
 
 ## 5. 回测结果
 
-Valid split：
+验证集：
 
 | 策略 | total_return | annual_return | sharpe | max_drawdown | avg_turnover | avg_n_holdings |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -160,7 +160,7 @@ Valid split：
 | `defensive_p20_b80_s220_size-20_amt-20` | 0.3854 | 0.4042 | 1.6795 | -0.1140 | 0.4037 | 13.14 |
 | `defensive_p30_b100_s260_size-20_amt-20` | 0.3712 | 0.3892 | 1.7521 | -0.1145 | 0.4019 | 18.02 |
 
-Test split：
+测试集：
 
 | 策略 | total_return | annual_return | sharpe | max_drawdown | avg_turnover | avg_n_holdings |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |

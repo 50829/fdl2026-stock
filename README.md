@@ -1,4 +1,4 @@
-# FDL2026 Stock Trend Prediction
+# FDL2026 股票趋势预测
 
 深度学习基础大作业：基于 A 股日频数据的趋势预测、模型融合与模拟交易评估。
 
@@ -53,6 +53,12 @@ python -m src.experiments preprocess --config configs/config.yaml
 python -m src.experiments --help
 ```
 
+规范文档：
+
+- `docs/architecture.md`：代码边界和目录规范
+- `docs/workflows.md`：长期实验、回测、每日排序工作流
+- `docs/artifact_registry.md`：artifact / bundle / registry 维护规则
+
 ## 基线模型
 
 通用 Torch 模型可以直接用 YAML 配置训练/预测：
@@ -79,29 +85,29 @@ python -m src.experiments gru-ablation --processed-dir data/processed --out-root
 LightGBM/XGBoost 训练、评测、预测统一入口：
 
 ```bash
-python -m src.experiments gbdt --model lightgbm --processed-dir data/processed --out-root outputs/models --run-name gbdt_full
-python -m src.experiments gbdt --model xgboost --processed-dir data/processed --out-root outputs/models --run-name gbdt_full
+python -m src.experiments gbdt --experiment gbdt_full --model lightgbm
+python -m src.experiments gbdt --experiment gbdt_full --model xgboost
 ```
 
 使用已经筛好的 top40 特征：
 
 ```bash
-python -m src.experiments gbdt --model lightgbm --processed-dir data/processed --feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt --out-root outputs/models --run-name feature_selection_lightgbm_top40
-python -m src.experiments gbdt --model xgboost --processed-dir data/processed --feature-list outputs/models/20260530_205006__feature_selection/features/lightgbm_top40.txt --out-root outputs/models --run-name feature_selection_xgboost_top40
+python -m src.experiments gbdt --experiment feature_selection_lightgbm_top40
+python -m src.experiments gbdt --experiment feature_selection_xgboost_top40
 ```
 
 ## 融合模型
 
-Residual-rank / stacking / leaf embedding 等融合实验入口：
+Residual-rank、stacking、leaf embedding 等融合实验入口：
 
 ```bash
-python -m src.experiments fusion --processed-dir data/processed --out-root outputs/models --run-name fusion_methods --experiments residual_rank --mlp-arch deep_ln --alpha-grid 0.0 0.25 0.5 0.75 1.0 1.5
+python -m src.experiments fusion --experiment fusion_methods
 ```
 
 最终交接模型使用 residual-rank deep_ln，默认 `alpha=1.5`。用已保存的 residual-rank MLP checkpoint 和 LightGBM/XGBoost top40 预测复现最终交接文件：
 
 ```bash
-python -m src.experiments final-handoff --alpha 1.5 --out-root outputs/models --run-name final_model_handoff
+python -m src.experiments final-handoff --experiment final_model_handoff
 ```
 
 输出：
@@ -128,17 +134,17 @@ python -m src.experiments backtest-sensitivity --pred final valid outputs/models
 策略网格回测入口：
 
 ```bash
-python -m src.experiments strategy-backtest --models final lgb_top40 --splits valid test --out-root outputs/strategy --run-name strategy_backtest
+python -m src.experiments strategy-backtest --strategy-run default_grid
 ```
 
 默认模型路径来自 `configs/registry/models.yaml`。新增模型或替换最终模型时，优先改注册表，而不是在脚本里改路径。
 
-## Live 交易计划
+## 每日交易计划
 
 每日收盘后生成下一交易日排序：
 
 ```bash
-python -m src.experiments live-rank --decision-date 20260603 --trade-date 20260604 --out-dir outputs/live/20260604__final__from_20260603
+python -m src.experiments live-rank --decision-date 20260603 --trade-date 20260604 --artifact-registry configs/registry/artifacts.yaml --out-dir outputs/live/20260604__final__from_20260603
 ```
 
 可选 `--watchlist watchlist.csv`，文件包含 `ts_code` 和可选 `stock_name`/`name` 列。

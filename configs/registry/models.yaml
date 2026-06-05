@@ -15,12 +15,6 @@ models:
       valid: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/valid/valid_pred.parquet
       test: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/test/test_pred.parquet
 
-artifacts:
-  final_live:
-    lgb_model: outputs/models/20260530_205006__feature_selection/lightgbm_top40/lightgbm/model.txt
-    xgb_model: outputs/models/20260530_205006__feature_selection/xgboost_top40/xgboost/model.json
-    fusion_model: outputs/models/20260531_121653__fusion_rank_tune/alpha_ext_h128_d010_wd1e4/residual_rank_mlp/residual_rank_mlp.pt
-
 feature_sets:
   risk_default:
     path: data/processed/features.parquet
