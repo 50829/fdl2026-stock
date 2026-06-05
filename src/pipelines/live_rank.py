@@ -50,99 +50,132 @@ def date_from_name(name: str) -> str | None:
     return match.group(1) if match else None
 
 
-def read_zip_group(zip_path: Path, prefix: str, end_date: str) -> list[pd.DataFrame]:
-    frames: list[pd.DataFrame] = []
-    with zipfile.ZipFile(zip_path) as zf:
-        for name in sorted(zf.namelist()):
-            if not name.endswith(".csv") or f"/{prefix}/" not in name:
-                continue
-            file_date = date_from_name(name)
-            if file_date and file_date > end_date:
-                continue
-            with zf.open(name) as fh:
-                df = normalize_csv(pd.read_csv(fh))
-            if "trade_date" in df.columns:
-                df = df[df["trade_date"].astype(str) <= end_date]
-            if not df.empty:
-                frames.append(df)
-    return frames
+def normalized_parts(name: str) -> tuple[list[str], str]:
+    path = Path(name)
+    parts = [str(part).lower().replace("_", " ") for part in path.parts[:-1]]
+    base = path.name.lower().replace("_", " ")
+    return parts, base
 
 
-def read_0602_zip(zip_path: Path, end_date: str) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame]]:
-    if end_date < "20260602":
-        return [], [], [], []
+def classify_raw_zip_member(name: str) -> str | None:
+    parts, base = normalized_parts(name)
+    if base.startswith("daily open"):
+        return "open"
+    if "daily" in parts or base.startswith("daily "):
+        return "daily"
+    if "metric" in parts or base.startswith("metric"):
+        return "metric"
+    if any(part in {"moneyflow", "money flow"} for part in parts) or "moneyflow" in base or "money flow" in base:
+        return "moneyflow"
+    if any(part in {"stock st", "stock st "} for part in parts) or base.startswith("stock st"):
+        return "stock_st"
+    return None
+
+
+def read_raw_zip(
+    zip_path: Path,
+    decision_date: str,
+    trade_date: str,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame]]:
+    if not zip_path.exists():
+        return [], [], [], [], []
     daily: list[pd.DataFrame] = []
     metric: list[pd.DataFrame] = []
     moneyflow: list[pd.DataFrame] = []
     st: list[pd.DataFrame] = []
+    open_frames: list[pd.DataFrame] = []
     with zipfile.ZipFile(zip_path) as zf:
         for name in sorted(zf.namelist()):
             if not name.endswith(".csv"):
                 continue
+            kind = classify_raw_zip_member(name)
+            if kind is None:
+                continue
+            file_date = date_from_name(name)
+            if kind == "open" and file_date and file_date != trade_date:
+                continue
+            if kind != "open" and file_date and file_date > decision_date:
+                continue
             with zf.open(name) as fh:
                 df = normalize_csv(pd.read_csv(fh))
             if "trade_date" in df.columns:
-                df = df[df["trade_date"].astype(str) <= end_date]
+                if kind == "open":
+                    df = df[df["trade_date"].astype(str) == trade_date]
+                else:
+                    df = df[df["trade_date"].astype(str) <= decision_date]
             if df.empty:
                 continue
-            base = Path(name).name.lower()
-            if base.startswith("daily open"):
-                continue
-            if base.startswith("daily "):
+            if kind == "daily":
                 daily.append(df)
-            elif base.startswith("metric"):
+            elif kind == "metric":
                 metric.append(df)
-            elif "moneyflow" in base:
+            elif kind == "moneyflow":
                 moneyflow.append(df)
-            elif "stock_st" in base:
+            elif kind == "stock_st":
                 st.append(df)
-    return daily, metric, moneyflow, st
+            elif kind == "open":
+                open_frames.append(df)
+    return daily, metric, moneyflow, st, open_frames
 
 
-def first_existing(paths: list[Path]) -> Path | None:
-    for path in paths:
-        if path.exists():
-            return path
-    return None
-
-
-def read_optional_csv(path: Path | None) -> list[pd.DataFrame]:
-    if path is None:
-        return []
-    return [normalize_csv(pd.read_csv(path))]
+def read_raw_zips(
+    raw_dir: Path,
+    decision_date: str,
+    trade_date: str,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame]]:
+    daily: list[pd.DataFrame] = []
+    metric: list[pd.DataFrame] = []
+    moneyflow: list[pd.DataFrame] = []
+    st: list[pd.DataFrame] = []
+    open_frames: list[pd.DataFrame] = []
+    for zip_path in sorted(raw_dir.glob("*.zip")):
+        d, m, mf, s, o = read_raw_zip(zip_path, decision_date, trade_date)
+        daily.extend(d)
+        metric.extend(m)
+        moneyflow.extend(mf)
+        st.extend(s)
+        open_frames.extend(o)
+    return daily, metric, moneyflow, st, open_frames
 
 
 def read_loose_raw(
     raw_dir: Path,
     decision_date: str,
     trade_date: str,
-) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], pd.DataFrame | None]:
-    daily_path = first_existing([raw_dir / f"daily {decision_date}.csv", raw_dir / f"daily_{decision_date}.csv"])
-    metric_path = first_existing([raw_dir / f"metric {decision_date}.csv", raw_dir / f"metric_{decision_date}.csv"])
-    moneyflow_path = first_existing([raw_dir / f"moneyflow {decision_date}.csv", raw_dir / f"moneyflow_{decision_date}.csv"])
-    st_path = first_existing(
-        [
-            raw_dir / f"stock_st {decision_date}.csv",
-            raw_dir / f"stock st {decision_date}.csv",
-            raw_dir / "stock_st.csv",
-            raw_dir / "stock st .csv",
-        ]
-    )
-    open_path = first_existing(
-        [
-            raw_dir / f"daily open {trade_date}.csv",
-            raw_dir / f"daily open{trade_date}.csv",
-            raw_dir / f"daily_open_{trade_date}.csv",
-        ]
-    )
-    open_df = normalize_csv(pd.read_csv(open_path)) if open_path else None
-    return (
-        read_optional_csv(daily_path),
-        read_optional_csv(metric_path),
-        read_optional_csv(moneyflow_path),
-        read_optional_csv(st_path),
-        open_df,
-    )
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame]]:
+    daily: list[pd.DataFrame] = []
+    metric: list[pd.DataFrame] = []
+    moneyflow: list[pd.DataFrame] = []
+    st: list[pd.DataFrame] = []
+    open_frames: list[pd.DataFrame] = []
+    for path in sorted(raw_dir.glob("*.csv")):
+        kind = classify_raw_zip_member(path.name)
+        if kind is None:
+            continue
+        file_date = date_from_name(path.name)
+        if kind == "open" and file_date and file_date != trade_date:
+            continue
+        if kind != "open" and file_date and file_date > decision_date:
+            continue
+        df = normalize_csv(pd.read_csv(path))
+        if "trade_date" in df.columns:
+            if kind == "open":
+                df = df[df["trade_date"].astype(str) == trade_date]
+            else:
+                df = df[df["trade_date"].astype(str) <= decision_date]
+        if df.empty:
+            continue
+        if kind == "daily":
+            daily.append(df)
+        elif kind == "metric":
+            metric.append(df)
+        elif kind == "moneyflow":
+            moneyflow.append(df)
+        elif kind == "stock_st":
+            st.append(df)
+        elif kind == "open":
+            open_frames.append(df)
+    return daily, metric, moneyflow, st, open_frames
 
 
 def concat(frames: list[pd.DataFrame]) -> pd.DataFrame:
@@ -154,22 +187,14 @@ def build_panel_from_raw(
     decision_date: str,
     trade_date: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None, list[str]]:
-    daily_frames = read_zip_group(raw_dir / "0601.zip", "daily", decision_date)
-    metric_frames = read_zip_group(raw_dir / "0601.zip", "metric", decision_date)
-    moneyflow_frames = read_zip_group(raw_dir / "0601.zip", "moneyflow", decision_date)
-    st_frames = read_zip_group(raw_dir / "0601.zip", "stock_st", decision_date)
+    daily_frames, metric_frames, moneyflow_frames, st_frames, open_frames = read_raw_zips(raw_dir, decision_date, trade_date)
 
-    d2, m2, mf2, st2 = read_0602_zip(raw_dir / "0602.zip", decision_date)
-    daily_frames.extend(d2)
-    metric_frames.extend(m2)
-    moneyflow_frames.extend(mf2)
-    st_frames.extend(st2)
-
-    d3, m3, mf3, st3, open_df = read_loose_raw(raw_dir, decision_date, trade_date)
+    d3, m3, mf3, st3, loose_open = read_loose_raw(raw_dir, decision_date, trade_date)
     daily_frames.extend(d3)
     metric_frames.extend(m3)
     moneyflow_frames.extend(mf3)
     st_frames.extend(st3)
+    open_frames.extend(loose_open)
 
     daily = concat(daily_frames).drop_duplicates(["trade_date", "ts_code"], keep="last")
     metric = concat(metric_frames).drop(columns=["close"], errors="ignore").drop_duplicates(["trade_date", "ts_code"], keep="last")
@@ -186,6 +211,9 @@ def build_panel_from_raw(
         st["is_st"] = True
     else:
         st = pd.DataFrame(columns=["trade_date", "ts_code", "is_st"])
+    open_df = None
+    if open_frames:
+        open_df = concat(open_frames).drop_duplicates(["trade_date", "ts_code"], keep="last")
     return downcast_numeric(panel), st, open_df, sorted(panel["trade_date"].astype(str).unique().tolist())
 
 

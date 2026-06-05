@@ -34,3 +34,26 @@ strategy_runs:
     transaction_cost_bps: 5.0
     score_col: pred
     return_col: label_1d
+  label1d_vs_label5d:
+    command: strategy-backtest
+    out_root: outputs/strategy
+    run_name: label1d_vs_label5d
+    model_registry: configs/registry/models_label1d_vs_label5d.yaml
+    models:
+      - label5d_final
+      - label1d_lgb
+      - label1d_xgb
+      - label1d_fusion_valid_alpha
+    splits:
+      - valid
+      - test
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    score_col: pred
+    return_col: label_1d
+    benchmarks:
+      equal_weight: true
+      index_weight:
+        enabled: true
+        index_code: 000300.SH
+        weight_path: data/raw/index_weight.zip

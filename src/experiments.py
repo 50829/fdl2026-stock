@@ -28,6 +28,7 @@ COMMANDS: dict[str, Command] = {
     "backtest-sensitivity": Command("src.model_experiments.run_backtest_sensitivity", "Run backtest parameter sensitivity analysis."),
     "final-handoff": Command("src.pipelines.make_final_handoff", "Reproduce final residual-rank model handoff predictions."),
     "strategy-backtest": Command("src.pipelines.run_strategy_backtest", "Run strategy grid backtests from registered prediction files."),
+    "strategy-report": Command("src.pipelines.run_strategy_report", "Refresh strategy plots, long tables, and HTML reports from a completed run."),
     "live-rank": Command("src.pipelines.live_rank", "Generate a live ranking file for one decision date."),
     "normalize-outputs": Command("src.pipelines.normalize_outputs", "Normalize local output directory names."),
 }

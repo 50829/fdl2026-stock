@@ -1,0 +1,30 @@
+models:
+  label5d_final:
+    description: label5d 最终 residual-rank 模型，alpha=1.5。
+    predictions:
+      valid: outputs/models/20260531_162154__final_model_handoff/valid/valid_pred.parquet
+      test: outputs/models/20260531_162154__final_model_handoff/test/test_pred.parquet
+  label1d_lgb:
+    description: label1d LightGBM top40 模型。
+    predictions:
+      valid: outputs/models/20260601_000000__label1d_top40/lightgbm/valid/valid_pred.parquet
+      test: outputs/models/20260601_000000__label1d_top40/lightgbm/test/test_pred.parquet
+  label1d_xgb:
+    description: label1d XGBoost top40 模型。
+    predictions:
+      valid: outputs/models/20260601_000000__label1d_top40/xgboost/valid/valid_pred.parquet
+      test: outputs/models/20260601_000000__label1d_top40/xgboost/test/test_pred.parquet
+  label1d_fusion_valid_alpha:
+    description: label1d residual-rank MLP，验证集最优 alpha=0。
+    predictions:
+      valid: outputs/models/20260601_000000__label1d_fusion_top40/residual_rank_mlp/valid/valid_pred.parquet
+      test: outputs/models/20260601_000000__label1d_fusion_top40/residual_rank_mlp/test/test_pred.parquet
+
+feature_sets:
+  risk_default:
+    path: data/processed/features.parquet
+    columns:
+      - log_total_mv__cs_rank
+      - log_amount__cs_rank
+      - volatility_20__cs_rank
+      - turnover_rate__cs_rank

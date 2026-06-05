@@ -20,6 +20,7 @@ from src.strategy import (
     write_strategy_outputs,
     write_split_plots,
 )
+from src.strategy.reporting import write_report_artifacts
 from src.utils import DEFAULT_STRATEGY_REGISTRY, load_registry, make_run_dir, read_yaml, resolve_strategy_run, write_run_metadata
 
 
@@ -111,17 +112,29 @@ def _metric_table(rows: list[dict[str, Any]], top_n: int | None = None) -> str:
 
 def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[str, Any]], benchmark_note: str) -> None:
     lines = [
-        "# Strategy Backtest Report",
+        "# 策略回测报告",
         "",
-        "## Protocol",
+        "## 回测协议",
         "",
-        "- Selection signal: model `pred` only.",
-        "- Realized `label_1d` is used for ex-post returns and historical risk estimation.",
-        "- Equity comparison plots use log10 equity scale by default.",
-        "- Main report uses split plots: overview, top valid Sharpe, plots by strategy family, and all-strategies debug.",
-        f"- Benchmark: {benchmark_note}",
+        "- 选股信号只使用模型 `pred`。",
+        "- 已实现收益 `label_1d` 只用于事后收益计算和历史风险估计。",
+        "- 权益曲线图默认使用 log10 净值坐标。",
+        "- 主报告按概览、valid Sharpe、策略族、具体策略参数和模型视角拆分。",
+        f"- 基准：{benchmark_note}",
         "",
     ]
+    reporting = summary.get("reporting", {}) if isinstance(summary.get("reporting", {}), dict) else {}
+    if reporting:
+        lines.extend(
+            [
+                "## 报告文件",
+                "",
+                f"- HTML 报告：`{reporting.get('report_html', '')}`",
+                f"- 指标长表：`{reporting.get('metrics_long', '')}`",
+                f"- 权益长表：`{reporting.get('equity_long', '')}`",
+                "",
+            ]
+        )
     df = pd.DataFrame(all_rows)
     for model_name, model_info in summary["models"].items():
         lines.extend([f"## {model_name}", ""])
@@ -134,10 +147,10 @@ def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[s
                 [
                     f"### {split}",
                     "",
-                    f"- Metrics CSV: `{split_info['metrics_csv']}`",
-                    f"- Overview plot: `{split_info['plots']['overview']}`",
-                    f"- Top valid Sharpe plot: `{split_info['plots']['top_valid_sharpe']}`",
-                    f"- All-strategies debug plot: `{split_info['plots']['all_debug']}`",
+                    f"- 指标 CSV：`{split_info['metrics_csv']}`",
+                    f"- 概览图：`{split_info['plots']['overview']}`",
+                    f"- valid Sharpe 图：`{split_info['plots']['top_valid_sharpe']}`",
+                    f"- 全量调试图：`{split_info['plots']['all_debug']}`",
                     "",
                     _metric_table(rows, top_n=10),
                     "",
@@ -252,6 +265,9 @@ def run_cli() -> None:
     }
     all_rows: list[dict[str, Any]] = []
     valid_rows_by_model: dict[str, list[dict[str, Any]]] = {}
+    aggregate_rows_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in args.splits}
+    aggregate_curves_by_split: dict[str, dict[str, pd.DataFrame]] = {split: {} for split in args.splits}
+    aggregate_benchmarks_seen: dict[str, set[str]] = {split: set() for split in args.splits}
     benchmark_notes: list[str] = []
     if args.benchmark_path:
         benchmark_notes.append(f"external benchmark `{args.benchmark_name}` from `{args.benchmark_path}`")
@@ -287,6 +303,10 @@ def run_cli() -> None:
                 bm_metrics["pred_path"] = pred_path
                 benchmark_rows.append(bm_metrics)
                 curves[args.benchmark_name] = benchmark["curve"]
+                if args.benchmark_name not in aggregate_benchmarks_seen[split]:
+                    aggregate_rows_by_split[split].append(dict(bm_metrics))
+                    aggregate_curves_by_split[split][args.benchmark_name] = benchmark["curve"]
+                    aggregate_benchmarks_seen[split].add(args.benchmark_name)
             if use_index_weight:
                 benchmark = build_index_weight_benchmark(
                     df,
@@ -303,6 +323,10 @@ def run_cli() -> None:
                 bm_metrics["pred_path"] = pred_path
                 benchmark_rows.append(bm_metrics)
                 curves[benchmark_name] = benchmark["curve"]
+                if benchmark_name not in aggregate_benchmarks_seen[split]:
+                    aggregate_rows_by_split[split].append(dict(bm_metrics))
+                    aggregate_curves_by_split[split][benchmark_name] = benchmark["curve"]
+                    aggregate_benchmarks_seen[split].add(benchmark_name)
             if not args.no_equal_weight_benchmark:
                 benchmark = build_equal_weight_benchmark(df, return_col=args.return_col)
                 benchmark_dir = out_root / model_name / split / "benchmark_equal_weight_universe"
@@ -313,6 +337,10 @@ def run_cli() -> None:
                 bm_metrics["pred_path"] = pred_path
                 benchmark_rows.append(bm_metrics)
                 curves["benchmark_equal_weight_universe"] = benchmark["curve"]
+                if "benchmark_equal_weight_universe" not in aggregate_benchmarks_seen[split]:
+                    aggregate_rows_by_split[split].append(dict(bm_metrics))
+                    aggregate_curves_by_split[split]["benchmark_equal_weight_universe"] = benchmark["curve"]
+                    aggregate_benchmarks_seen[split].add("benchmark_equal_weight_universe")
             for exp_name, cfg in grid:
                 cfg = cfg.__class__(**{**cfg.__dict__, "score_col": args.score_col, "return_col": args.return_col})
                 result = run_strategy(df, cfg, name=exp_name)
@@ -325,6 +353,11 @@ def run_cli() -> None:
                 split_rows.append(metrics)
                 all_rows.append(metrics)
                 curves[exp_name] = result["curve"]
+                aggregate_name = f"{model_name}__{exp_name}"
+                aggregate_metrics = dict(metrics)
+                aggregate_metrics["name"] = aggregate_name
+                aggregate_rows_by_split[split].append(aggregate_metrics)
+                aggregate_curves_by_split[split][aggregate_name] = result["curve"]
                 print(json.dumps({"model": model_name, "split": split, "strategy": exp_name, "metrics": metrics}, ensure_ascii=False), flush=True)
             split_rows.extend(benchmark_rows)
             all_rows.extend(benchmark_rows)
@@ -349,6 +382,35 @@ def run_cli() -> None:
                 "plots": plot_paths,
                 "best_by_valid_protocol": _select_best(split_rows) if split == "valid" else None,
             }
+
+    summary["aggregate"] = {}
+    valid_aggregate_rows = aggregate_rows_by_split.get("valid")
+    for split in args.splits:
+        split_dir = out_root / split
+        split_dir.mkdir(parents=True, exist_ok=True)
+        rows = aggregate_rows_by_split[split]
+        pd.DataFrame(rows).to_csv(split_dir / "strategy_metrics.csv", index=False)
+        plots = write_split_plots(
+            aggregate_curves_by_split[split],
+            rows,
+            split_dir,
+            f"{split} label1d vs label5d strategy equity",
+            log_scale=not args.linear_scale,
+            valid_rows=valid_aggregate_rows,
+        )
+        summary["aggregate"][split] = {
+            "metrics_csv": str(split_dir / "strategy_metrics.csv"),
+            "plots": plots,
+            "best_by_valid_protocol": _select_best(rows) if split == "valid" else None,
+        }
+
+    summary["reporting"] = write_report_artifacts(
+        out_root,
+        aggregate_rows_by_split,
+        aggregate_curves_by_split,
+        benchmark_note=benchmark_note,
+        title=args.run_name,
+    )
 
     with (out_root / "summary.json").open("w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
