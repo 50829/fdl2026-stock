@@ -105,7 +105,8 @@ def run_fold(args: argparse.Namespace, pcfg: ProcessedConfig, feature_cols: list
 
     pred = predict_model(model, args.model, valid_df, feature_cols)
     key_trade, key_code = pcfg.key_cols
-    pred_df = valid_df[[key_trade, key_code, args.target, args.raw_return_col, args.daily_return_col]].copy()
+    pred_cols = list(dict.fromkeys([key_trade, key_code, args.target, args.raw_return_col, args.daily_return_col]))
+    pred_df = valid_df[pred_cols].copy()
     pred_df["pred"] = pred
     if args.save_predictions:
         pred_df.to_parquet(out_dir / "valid_pred.parquet", index=False)

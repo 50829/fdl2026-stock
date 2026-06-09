@@ -293,7 +293,8 @@ def run(args: argparse.Namespace) -> dict:
             eval_df = load_tabular_frame(pcfg, splits[split_name], feature_cols, label_cols, args.filter_in_universe)
             eval_df = eval_df.dropna(subset=[args.target]).reset_index(drop=True)
         pred = predict_model(model, args.model, eval_df, feature_cols)
-        pred_df = eval_df[[pcfg.key_cols[0], pcfg.key_cols[1], args.target, args.raw_return_col, args.daily_return_col]].copy()
+        pred_cols = list(dict.fromkeys([pcfg.key_cols[0], pcfg.key_cols[1], args.target, args.raw_return_col, args.daily_return_col]))
+        pred_df = eval_df[pred_cols].copy()
         pred_df = pred_df.assign(pred=pred)
         split_out = out_dir / split_name
         split_out.mkdir(parents=True, exist_ok=True)

@@ -32,6 +32,8 @@ COMMANDS: dict[str, Command] = {
     "strategy-sensitivity": Command("src.pipelines.run_strategy_sensitivity", "Run cost sensitivity matrices for registered strategy runs."),
     "strategy-risk-sweep": Command("src.pipelines.run_strategy_risk_sweep", "Run risk-control return/drawdown sweeps for registered strategy runs."),
     "live-rank": Command("src.pipelines.live_rank", "Generate a live ranking file for one decision date."),
+    "label1d-window-ablation": Command("src.pipelines.run_label1d_window_ablation", "Run label1d LightGBM feature-window ablations."),
+    "label1d-window-walkforward": Command("src.pipelines.run_label1d_window_walkforward", "Run label1d expanding walk-forward checks for window ablations."),
     "normalize-outputs": Command("src.pipelines.normalize_outputs", "Normalize local output directory names."),
 }
 
