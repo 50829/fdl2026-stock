@@ -5,7 +5,7 @@ from typing import Any
 import pandas as pd
 
 from ..config import StrategyBacktestConfig
-from ..utils import drop_missing, top_codes
+from ..utils import buyable_day, drop_missing, top_codes
 
 
 def rank_buffer(
@@ -31,10 +31,11 @@ def rank_buffer(
         else:
             next_holdings[code] = age
 
-    buy_pool = day[day["rank"] <= cfg.buy_rank]
+    buy_day = buyable_day(day, cfg)
+    buy_pool = buy_day[buy_day["rank"] <= cfg.buy_rank]
     buys = [str(c) for c in buy_pool.index if str(c) not in next_holdings][: max(0, cfg.target_positions - len(next_holdings))]
     if len(next_holdings) + len(buys) < cfg.target_positions:
-        extra = top_codes(day, cfg.target_positions - len(next_holdings) - len(buys), exclude=set(next_holdings) | set(buys))
+        extra = top_codes(buy_day, cfg.target_positions - len(next_holdings) - len(buys), exclude=set(next_holdings) | set(buys))
         buys.extend(extra)
     for code in buys:
         next_holdings[code] = 0

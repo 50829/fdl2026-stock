@@ -1,22 +1,37 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 from .config import StrategyBacktestConfig
 
 
-def build_strategy_grid(cost_bps: float = 5.0) -> list[tuple[str, StrategyBacktestConfig]]:
+def build_strategy_grid(
+    cost_bps: float = 5.0,
+    slippage_bps: float = 0.0,
+    execution_price_model: str = "close_to_close",
+    enforce_buy_constraints: bool = False,
+    config_overrides: dict[str, Any] | None = None,
+) -> list[tuple[str, StrategyBacktestConfig]]:
     rows: list[tuple[str, StrategyBacktestConfig]] = []
-    base = StrategyBacktestConfig(strategy="rolling_tranche", transaction_cost_bps=cost_bps)
+    base_kwargs = {
+        "transaction_cost_bps": cost_bps,
+        "slippage_bps": slippage_bps,
+        "execution_price_model": execution_price_model,
+        "enforce_buy_constraints": enforce_buy_constraints,
+    }
+    if config_overrides:
+        base_kwargs.update(config_overrides)
+    base = StrategyBacktestConfig(strategy="rolling_tranche", **base_kwargs)
     for target, hold in [(10, 5), (20, 3), (20, 5), (20, 10), (30, 5)]:
         cfg = replace(base, target_positions=target, hold_days=hold, daily_buy=max(1, round(target / hold)))
         rows.append((f"rolling_p{target}_h{hold}", cfg))
 
-    base = StrategyBacktestConfig(strategy="topk_drop", transaction_cost_bps=cost_bps)
+    base = StrategyBacktestConfig(strategy="topk_drop", **base_kwargs)
     for topk, drop in [(20, 1), (20, 2), (20, 3), (20, 5), (30, 3)]:
         rows.append((f"topk{topk}_drop{drop}", replace(base, topk=topk, drop=drop)))
 
-    base = StrategyBacktestConfig(strategy="rank_buffer", transaction_cost_bps=cost_bps)
+    base = StrategyBacktestConfig(strategy="rank_buffer", **base_kwargs)
     for target, buy, sell, min_hold, max_hold in [(20, 30, 100, 2, 10), (20, 50, 100, 2, 10), (30, 50, 150, 2, 10)]:
         rows.append(
             (
@@ -25,7 +40,7 @@ def build_strategy_grid(cost_bps: float = 5.0) -> list[tuple[str, StrategyBackte
             )
         )
 
-    base = StrategyBacktestConfig(strategy="defensive_rank_buffer", transaction_cost_bps=cost_bps)
+    base = StrategyBacktestConfig(strategy="defensive_rank_buffer", **base_kwargs)
     for target, buy, sell, min_size, min_amt, max_vol, stress_exp in [
         (20, 60, 180, -0.35, -0.35, 0.70, 0.55),
         (20, 80, 220, -0.20, -0.20, 0.60, 0.50),
@@ -54,11 +69,11 @@ def build_strategy_grid(cost_bps: float = 5.0) -> list[tuple[str, StrategyBackte
     rows.append(
         (
             "risk_tail_core30_tail70",
-            StrategyBacktestConfig(strategy="risk_balanced_tail", transaction_cost_bps=cost_bps),
+            StrategyBacktestConfig(strategy="risk_balanced_tail", **base_kwargs),
         )
     )
 
-    base = StrategyBacktestConfig(strategy="risk_filtered_rank_buffer", transaction_cost_bps=cost_bps)
+    base = StrategyBacktestConfig(strategy="risk_filtered_rank_buffer", **base_kwargs)
     for target, candidate, keep, buy, sell, min_hold, max_hold, max_updates in [
         (20, 100, 70, 50, 120, 3, 10, 4),
         (30, 150, 80, 60, 150, 3, 10, 5),
@@ -81,7 +96,7 @@ def build_strategy_grid(cost_bps: float = 5.0) -> list[tuple[str, StrategyBackte
                 ),
             )
         )
-    base = StrategyBacktestConfig(strategy="risk_budget_rank_buffer", transaction_cost_bps=cost_bps)
+    base = StrategyBacktestConfig(strategy="risk_budget_rank_buffer", **base_kwargs)
     for target, candidate, keep, buy, sell, min_hold, max_hold, max_updates, penalty, cap in [
         (20, 150, 80, 40, 120, 3, 12, 4, 0.25, 0.08),
         (20, 200, 100, 50, 150, 5, 15, 3, 0.35, 0.08),

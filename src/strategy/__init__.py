@@ -1,6 +1,6 @@
 from .benchmarks import align_benchmark_to_dates, build_equal_weight_benchmark, build_index_weight_benchmark, load_price_benchmark
 from .config import StrategyBacktestConfig
-from .data import load_prediction_data, merge_feature_columns
+from .data import load_prediction_data, merge_feature_columns, merge_trade_constraint_columns
 from .engine import run_strategy
 from .grid import build_strategy_grid
 from .io import write_strategy_outputs
@@ -14,6 +14,7 @@ __all__ = [
     "build_strategy_grid",
     "load_prediction_data",
     "merge_feature_columns",
+    "merge_trade_constraint_columns",
     "load_price_benchmark",
     "plot_comparison",
     "run_strategy",

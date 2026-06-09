@@ -9,6 +9,10 @@ class StrategyBacktestConfig:
     score_col: str = "pred"
     return_col: str = "label_1d"
     transaction_cost_bps: float = 5.0
+    slippage_bps: float = 0.0
+    execution_price_model: str = "close_to_close"
+    enforce_buy_constraints: bool = False
+    buyable_col: str = "is_buyable"
     trading_days_per_year: int = 252
     target_positions: int = 20
     hold_days: int = 5
@@ -34,4 +38,13 @@ class StrategyBacktestConfig:
     max_volatility_rank: float = 0.70
     market_window: int = 5
     market_stress_threshold: float = -0.08
+    market_stress_lag: int = 2
     stress_gross_exposure: float = 0.55
+    apply_market_stress_deleveraging: bool = False
+    apply_drawdown_control: bool = False
+    drawdown_warning_threshold: float = -0.08
+    drawdown_warning_exposure: float = 0.50
+    drawdown_cut_threshold: float = -0.12
+    drawdown_cut_exposure: float = 0.25
+    drawdown_stop_threshold: float = -0.18
+    drawdown_stop_exposure: float = 0.20

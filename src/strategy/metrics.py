@@ -29,6 +29,8 @@ def metrics_from_curve(
     strategy: str,
     trading_days_per_year: int = 252,
     transaction_cost_bps: float = 0.0,
+    slippage_bps: float = 0.0,
+    execution_price_model: str = "close_to_close",
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     returns_np = curve["net_return"].to_numpy(dtype=np.float64) if "net_return" in curve else np.empty(0)
@@ -49,6 +51,13 @@ def metrics_from_curve(
         "max_drawdown": max_drawdown(equity_np),
         "avg_turnover": float(curve["turnover"].mean()) if "turnover" in curve and periods else 0.0,
         "avg_n_holdings": float(curve["n_holdings"].mean()) if "n_holdings" in curve and periods else math.nan,
+        "avg_gross_exposure": float(curve["gross_exposure"].mean()) if "gross_exposure" in curve and periods else math.nan,
+        "min_gross_exposure": float(curve["gross_exposure"].min()) if "gross_exposure" in curve and periods else math.nan,
+        "market_stress_days": int(curve["market_stressed"].sum()) if "market_stressed" in curve and periods else 0,
+        "drawdown_control_days": int((curve["drawdown_exposure_limit"] < 1.0).sum()) if "drawdown_exposure_limit" in curve and periods else 0,
         "transaction_cost_bps": float(transaction_cost_bps),
+        "slippage_bps": float(slippage_bps),
+        "total_cost_bps": float(transaction_cost_bps + slippage_bps),
+        "execution_price_model": str(execution_price_model),
         "config": config or {},
     }

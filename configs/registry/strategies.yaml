@@ -57,3 +57,141 @@ strategy_runs:
         enabled: true
         index_code: 000300.SH
         weight_path: data/raw/index_weight.zip
+  label1d_vs_label5d_realistic:
+    command: strategy-backtest
+    out_root: outputs/strategy
+    run_name: label1d_vs_label5d_realistic
+    model_registry: configs/registry/models_label1d_vs_label5d.yaml
+    models:
+      - label5d_final
+      - label1d_lgb
+    splits:
+      - valid
+      - test
+    strategies:
+      - rolling_p10_h5
+      - topk20_drop3
+      - rankbuf_p20_b50_s100_min2_max10
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    slippage_bps: 20.0
+    execution_price_model: close_with_slippage
+    score_col: pred
+    return_col: label_1d
+    trade_constraints:
+      enabled: true
+      path: data/processed/universe.parquet
+      min_amount_mean_20: 0.0
+    benchmarks:
+      equal_weight: true
+      index_weight:
+        enabled: true
+        index_code: 000300.SH
+        weight_path: data/raw/index_weight.zip
+  label1d_vs_label5d_cost_sensitivity:
+    command: strategy-sensitivity
+    out_root: outputs/strategy
+    run_name: label1d_vs_label5d_cost_sensitivity
+    model_registry: configs/registry/models_label1d_vs_label5d.yaml
+    models:
+      - label5d_final
+      - label1d_lgb
+    splits:
+      - valid
+      - test
+    strategies:
+      - rolling_p10_h5
+      - topk20_drop3
+      - rankbuf_p20_b50_s100_min2_max10
+    total_cost_bps_grid:
+      - 5.0
+      - 10.0
+      - 20.0
+      - 50.0
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    score_col: pred
+    return_col: label_1d
+    trade_constraints:
+      enabled: true
+      path: data/processed/universe.parquet
+      min_amount_mean_20: 0.0
+  label1d_vs_label5d_risk_controls:
+    command: strategy-backtest
+    out_root: outputs/strategy
+    run_name: label1d_vs_label5d_risk_controls
+    model_registry: configs/registry/models_label1d_vs_label5d.yaml
+    models:
+      - label5d_final
+      - label1d_lgb
+    splits:
+      - valid
+      - test
+    strategies:
+      - rolling_p10_h5
+      - topk20_drop3
+      - rankbuf_p20_b50_s100_min2_max10
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    slippage_bps: 20.0
+    execution_price_model: close_with_slippage
+    score_col: pred
+    return_col: label_1d
+    trade_constraints:
+      enabled: true
+      path: data/processed/universe.parquet
+      min_amount_mean_20: 0.0
+    risk_controls:
+      market_stress_deleveraging: true
+      market_window: 5
+      market_stress_threshold: -0.03
+      market_stress_lag: 2
+      stress_gross_exposure: 0.50
+      drawdown_control: true
+      drawdown_warning_threshold: -0.08
+      drawdown_warning_exposure: 0.50
+      drawdown_cut_threshold: -0.12
+      drawdown_cut_exposure: 0.25
+      drawdown_stop_threshold: -0.18
+      drawdown_stop_exposure: 0.20
+    benchmarks:
+      equal_weight: true
+      index_weight:
+        enabled: true
+        index_code: 000300.SH
+        weight_path: data/raw/index_weight.zip
+  label1d_vs_label5d_risk_return_sweep:
+    command: strategy-risk-sweep
+    out_root: outputs/strategy
+    run_name: label1d_vs_label5d_risk_return_sweep
+    model_registry: configs/registry/models_label1d_vs_label5d.yaml
+    models:
+      - label5d_final
+      - label1d_lgb
+    splits:
+      - valid
+      - test
+    strategies:
+      - rolling_p10_h5
+      - topk20_drop3
+      - rankbuf_p20_b50_s100_min2_max10
+    risk_profiles:
+      - none
+      - market_mild
+      - market_medium
+      - dd_mild
+      - dd_medium
+      - combined_mild
+      - combined_medium
+      - combined_hard
+    max_drawdown_limit: -0.25
+    feature_set: risk_default
+    transaction_cost_bps: 5.0
+    slippage_bps: 20.0
+    execution_price_model: close_with_slippage
+    score_col: pred
+    return_col: label_1d
+    trade_constraints:
+      enabled: true
+      path: data/processed/universe.parquet
+      min_amount_mean_20: 0.0

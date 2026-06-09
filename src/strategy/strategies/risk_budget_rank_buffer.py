@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import StrategyBacktestConfig
-from ..utils import drop_missing
+from ..utils import buyable_day, drop_missing
 
 
 def _historical_vol(ret_panel: pd.DataFrame, date: str, codes: list[str], cfg: StrategyBacktestConfig) -> pd.Series:
@@ -52,8 +52,10 @@ def risk_budget_rank_buffer(
 ) -> tuple[dict[str, int], dict[str, float], list[dict[str, Any]]]:
     current = drop_missing(holdings, day)
     score = day[cfg.score_col].astype(float)
-    ranked_codes = [str(c) for c in score.sort_values(ascending=False).index]
-    candidate_pool = ranked_codes[: max(cfg.risk_candidate_count, cfg.target_positions)]
+    buy_score = buyable_day(day, cfg)[cfg.score_col].astype(float)
+    buy_ranked_codes = [str(c) for c in buy_score.sort_values(ascending=False).index]
+    buy_ranked_set = set(buy_ranked_codes)
+    candidate_pool = list(dict.fromkeys(buy_ranked_codes[: max(cfg.risk_candidate_count, cfg.target_positions)] + list(current)))
     vol = _historical_vol(ret_panel, date, candidate_pool + list(current), cfg)
     alpha_pct = score.reindex(candidate_pool).rank(method="average", pct=True).fillna(0.0)
     vol_pct = vol.reindex(candidate_pool).rank(method="average", pct=True).fillna(0.5)
@@ -93,10 +95,10 @@ def risk_budget_rank_buffer(
     buy_pool = [
         str(c)
         for c in utility.index
-        if str(c) not in next_holdings and int(day.at[str(c), "rank"]) <= cfg.buy_rank
+        if str(c) in buy_ranked_set and str(c) not in next_holdings and int(day.at[str(c), "rank"]) <= cfg.buy_rank
     ]
     if not current:
-        buy_pool += [str(c) for c in utility.index if str(c) not in next_holdings and str(c) not in set(buy_pool)]
+        buy_pool += [str(c) for c in utility.index if str(c) in buy_ranked_set and str(c) not in next_holdings and str(c) not in set(buy_pool)]
     buys = buy_pool[: max(0, cfg.target_positions - len(next_holdings))]
     for code in buys:
         next_holdings[code] = 0

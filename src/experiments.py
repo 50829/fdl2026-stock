@@ -29,6 +29,8 @@ COMMANDS: dict[str, Command] = {
     "final-handoff": Command("src.pipelines.make_final_handoff", "Reproduce final residual-rank model handoff predictions."),
     "strategy-backtest": Command("src.pipelines.run_strategy_backtest", "Run strategy grid backtests from registered prediction files."),
     "strategy-report": Command("src.pipelines.run_strategy_report", "Refresh strategy plots, long tables, and HTML reports from a completed run."),
+    "strategy-sensitivity": Command("src.pipelines.run_strategy_sensitivity", "Run cost sensitivity matrices for registered strategy runs."),
+    "strategy-risk-sweep": Command("src.pipelines.run_strategy_risk_sweep", "Run risk-control return/drawdown sweeps for registered strategy runs."),
     "live-rank": Command("src.pipelines.live_rank", "Generate a live ranking file for one decision date."),
     "normalize-outputs": Command("src.pipelines.normalize_outputs", "Normalize local output directory names."),
 }

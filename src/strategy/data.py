@@ -7,6 +7,8 @@ import pandas as pd
 
 from .config import StrategyBacktestConfig
 
+DEFAULT_TRADE_CONSTRAINT_COLUMNS = ["in_universe", "is_st", "passes_liquidity", "amount_mean_20"]
+
 
 def load_prediction_data(path: str | Path, score_col: str = "pred", return_col: str = "label_1d") -> pd.DataFrame:
     if score_col == return_col or str(score_col).startswith("label_"):
@@ -44,6 +46,65 @@ def merge_feature_columns(
         if col in out.columns:
             out[col] = out[col].astype("float32")
     return out
+
+
+def merge_trade_constraint_columns(
+    df: pd.DataFrame,
+    constraint_path: str | Path,
+    *,
+    min_amount_mean_20: float = 0.0,
+    buyable_col: str = "is_buyable",
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    path = Path(constraint_path)
+    if not path.exists():
+        raise FileNotFoundError(f"trade constraint file does not exist: {path}")
+    constraints = pd.read_parquet(path)
+    required = ["trade_date", "ts_code"]
+    missing_keys = [col for col in required if col not in constraints.columns]
+    if missing_keys:
+        raise ValueError(f"{path} missing required columns: {missing_keys}")
+    keep = required + [col for col in DEFAULT_TRADE_CONSTRAINT_COLUMNS if col in constraints.columns]
+    constraints = constraints[keep].copy()
+    constraints["trade_date"] = constraints["trade_date"].astype(str)
+    constraints["ts_code"] = constraints["ts_code"].astype(str)
+    constraints["_constraint_matched"] = True
+
+    out = df.merge(constraints, on=["trade_date", "ts_code"], how="left")
+    matched = out["_constraint_matched"].fillna(False).astype(bool)
+    buyable = matched.copy()
+    used_rules: list[str] = ["matched_constraint_row"]
+    if "in_universe" in out.columns:
+        out["in_universe"] = out["in_universe"].fillna(False).astype(bool)
+        buyable &= out["in_universe"]
+        used_rules.append("in_universe")
+    if "is_st" in out.columns:
+        out["is_st"] = out["is_st"].fillna(False).astype(bool)
+        buyable &= ~out["is_st"]
+        used_rules.append("not_st")
+    if "passes_liquidity" in out.columns:
+        out["passes_liquidity"] = out["passes_liquidity"].fillna(False).astype(bool)
+        buyable &= out["passes_liquidity"]
+        used_rules.append("passes_liquidity")
+    if "amount_mean_20" in out.columns:
+        out["amount_mean_20"] = pd.to_numeric(out["amount_mean_20"], errors="coerce").astype("float32")
+        if min_amount_mean_20 > 0:
+            buyable &= out["amount_mean_20"].fillna(0.0) >= float(min_amount_mean_20)
+            used_rules.append(f"amount_mean_20>={float(min_amount_mean_20):.0f}")
+    out[buyable_col] = buyable.astype(bool)
+    out = out.drop(columns=["_constraint_matched"])
+    stats = {
+        "constraint_path": str(path),
+        "rows": int(len(out)),
+        "matched_rows": int(matched.sum()),
+        "matched_rate": float(matched.mean()) if len(out) else 0.0,
+        "buyable_col": buyable_col,
+        "buyable_rows": int(out[buyable_col].sum()),
+        "buyable_rate": float(out[buyable_col].mean()) if len(out) else 0.0,
+        "columns_used": [col for col in keep if col not in required],
+        "rules": used_rules,
+        "min_amount_mean_20": float(min_amount_mean_20),
+    }
+    return out, stats
 
 
 def prepare_maps(df: pd.DataFrame, cfg: StrategyBacktestConfig) -> tuple[list[str], dict[str, pd.DataFrame], pd.DataFrame]:

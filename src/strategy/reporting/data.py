@@ -76,8 +76,20 @@ def normalize_equity_curves(curves_by_split: dict[str, dict[str, pd.DataFrame]])
                 "drawdown",
                 "net_return",
                 "gross_return",
+                "transaction_cost",
+                "fee_cost",
+                "slippage_cost",
+                "total_cost",
                 "turnover",
                 "n_holdings",
+                "raw_gross_exposure",
+                "gross_exposure",
+                "exposure_limit",
+                "market_exposure_limit",
+                "drawdown_exposure_limit",
+                "market_stressed",
+                "market_stress_return",
+                "portfolio_drawdown_pre",
             ]
             frames.append(out[[col for col in keep if col in out.columns]])
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

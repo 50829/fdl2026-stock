@@ -16,6 +16,7 @@ from src.strategy import (
     load_prediction_data,
     load_price_benchmark,
     merge_feature_columns,
+    merge_trade_constraint_columns,
     run_strategy,
     write_strategy_outputs,
     write_split_plots,
@@ -111,6 +112,8 @@ def _metric_table(rows: list[dict[str, Any]], top_n: int | None = None) -> str:
 
 
 def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[str, Any]], benchmark_note: str) -> None:
+    constraints = summary.get("trade_constraints", {}) if isinstance(summary.get("trade_constraints", {}), dict) else {}
+    risk_controls = summary.get("risk_controls", {}) if isinstance(summary.get("risk_controls", {}), dict) else {}
     lines = [
         "# 策略回测报告",
         "",
@@ -118,6 +121,12 @@ def _write_report(out_root: Path, summary: dict[str, Any], all_rows: list[dict[s
         "",
         "- 选股信号只使用模型 `pred`。",
         "- 已实现收益 `label_1d` 只用于事后收益计算和历史风险估计。",
+        f"- 成交假设：`{summary.get('execution_price_model', 'close_to_close')}`。",
+        f"- 基础交易成本：`{float(summary.get('transaction_cost_bps', 0.0)):.2f} bps`。",
+        f"- 额外滑点成本：`{float(summary.get('slippage_bps', 0.0)):.2f} bps`。",
+        f"- 买入约束：{'启用' if constraints.get('enabled') else '未启用'}。",
+        f"- 市场压力降仓：{'启用' if risk_controls.get('apply_market_stress_deleveraging') else '未启用'}。",
+        f"- 组合回撤控制：{'启用' if risk_controls.get('apply_drawdown_control') else '未启用'}。",
         "- 权益曲线图默认使用 log10 净值坐标。",
         "- 主报告按概览、valid Sharpe、策略族、具体策略参数和模型视角拆分。",
         f"- 基准：{benchmark_note}",
@@ -170,13 +179,31 @@ def run_cli() -> None:
     parser.add_argument("--model-registry", default=DEFAULT_MODEL_REGISTRY)
     parser.add_argument("--models", nargs="+", default=None)
     parser.add_argument("--splits", nargs="+", choices=["valid", "test"], default=None)
+    parser.add_argument("--strategies", nargs="+", default=None, help="Optional strategy variant names to run from the grid.")
     parser.add_argument("--transaction-cost-bps", type=float, default=None)
+    parser.add_argument("--slippage-bps", type=float, default=None)
+    parser.add_argument("--execution-price-model", choices=["close_to_close", "close_with_slippage"], default=None)
     parser.add_argument("--score-col", default=None)
     parser.add_argument("--return-col", default=None)
     parser.add_argument("--feature-set", default=None)
     parser.add_argument("--feature-path", default=None, help="Override the feature path from --feature-set.")
     parser.add_argument("--feature-columns", nargs="+", default=None, help="Override feature columns from --feature-set.")
     parser.add_argument("--no-feature-merge", action="store_true")
+    parser.add_argument("--trade-constraints-path", default=None, help="Optional universe parquet with in_universe/is_st/passes_liquidity fields.")
+    parser.add_argument("--min-amount-mean-20", type=float, default=None)
+    parser.add_argument("--no-trade-constraints", action="store_true")
+    parser.add_argument("--market-stress-deleveraging", action="store_true")
+    parser.add_argument("--market-window", type=int, default=None)
+    parser.add_argument("--market-stress-threshold", type=float, default=None)
+    parser.add_argument("--market-stress-lag", type=int, default=None)
+    parser.add_argument("--stress-gross-exposure", type=float, default=None)
+    parser.add_argument("--drawdown-control", action="store_true")
+    parser.add_argument("--drawdown-warning-threshold", type=float, default=None)
+    parser.add_argument("--drawdown-warning-exposure", type=float, default=None)
+    parser.add_argument("--drawdown-cut-threshold", type=float, default=None)
+    parser.add_argument("--drawdown-cut-exposure", type=float, default=None)
+    parser.add_argument("--drawdown-stop-threshold", type=float, default=None)
+    parser.add_argument("--drawdown-stop-exposure", type=float, default=None)
     parser.add_argument("--benchmark-path", default=None, help="Optional CSV/parquet index benchmark with trade_date and close/equity/return.")
     parser.add_argument("--benchmark-name", default="benchmark_index")
     parser.add_argument("--index-weight-path", default="data/raw/index_weight.zip")
@@ -197,10 +224,36 @@ def run_cli() -> None:
         args.model_registry = str(strategy_cfg.get("model_registry", args.model_registry))
         args.models = args.models or list(strategy_cfg.get("models", []))
         args.splits = args.splits or list(strategy_cfg.get("splits", []))
+        args.strategies = args.strategies or list(strategy_cfg.get("strategies", [])) or None
         args.feature_set = args.feature_set or strategy_cfg.get("feature_set")
         args.transaction_cost_bps = args.transaction_cost_bps if args.transaction_cost_bps is not None else strategy_cfg.get("transaction_cost_bps")
+        args.slippage_bps = args.slippage_bps if args.slippage_bps is not None else strategy_cfg.get("slippage_bps")
+        args.execution_price_model = args.execution_price_model or strategy_cfg.get("execution_price_model")
         args.score_col = args.score_col or strategy_cfg.get("score_col")
         args.return_col = args.return_col or strategy_cfg.get("return_col")
+        trade_constraints = strategy_cfg.get("trade_constraints", {}) if isinstance(strategy_cfg.get("trade_constraints", {}), dict) else {}
+        if not args.no_trade_constraints and trade_constraints.get("enabled", False):
+            args.trade_constraints_path = args.trade_constraints_path or trade_constraints.get("path")
+            args.min_amount_mean_20 = (
+                args.min_amount_mean_20 if args.min_amount_mean_20 is not None else trade_constraints.get("min_amount_mean_20")
+            )
+        risk_controls = strategy_cfg.get("risk_controls", {}) if isinstance(strategy_cfg.get("risk_controls", {}), dict) else {}
+        args.market_stress_deleveraging = args.market_stress_deleveraging or bool(risk_controls.get("market_stress_deleveraging", False))
+        args.market_window = args.market_window if args.market_window is not None else risk_controls.get("market_window")
+        args.market_stress_threshold = args.market_stress_threshold if args.market_stress_threshold is not None else risk_controls.get("market_stress_threshold")
+        args.market_stress_lag = args.market_stress_lag if args.market_stress_lag is not None else risk_controls.get("market_stress_lag")
+        args.stress_gross_exposure = args.stress_gross_exposure if args.stress_gross_exposure is not None else risk_controls.get("stress_gross_exposure")
+        args.drawdown_control = args.drawdown_control or bool(risk_controls.get("drawdown_control", False))
+        args.drawdown_warning_threshold = (
+            args.drawdown_warning_threshold if args.drawdown_warning_threshold is not None else risk_controls.get("drawdown_warning_threshold")
+        )
+        args.drawdown_warning_exposure = (
+            args.drawdown_warning_exposure if args.drawdown_warning_exposure is not None else risk_controls.get("drawdown_warning_exposure")
+        )
+        args.drawdown_cut_threshold = args.drawdown_cut_threshold if args.drawdown_cut_threshold is not None else risk_controls.get("drawdown_cut_threshold")
+        args.drawdown_cut_exposure = args.drawdown_cut_exposure if args.drawdown_cut_exposure is not None else risk_controls.get("drawdown_cut_exposure")
+        args.drawdown_stop_threshold = args.drawdown_stop_threshold if args.drawdown_stop_threshold is not None else risk_controls.get("drawdown_stop_threshold")
+        args.drawdown_stop_exposure = args.drawdown_stop_exposure if args.drawdown_stop_exposure is not None else risk_controls.get("drawdown_stop_exposure")
         benchmarks = strategy_cfg.get("benchmarks", {}) if isinstance(strategy_cfg.get("benchmarks", {}), dict) else {}
         index_weight = benchmarks.get("index_weight", {}) if isinstance(benchmarks.get("index_weight", {}), dict) else {}
         if args.index_weight_path == "data/raw/index_weight.zip":
@@ -211,9 +264,32 @@ def run_cli() -> None:
     args.models = args.models or ["final", "lgb_top40"]
     args.splits = args.splits or ["valid", "test"]
     args.transaction_cost_bps = float(5.0 if args.transaction_cost_bps is None else args.transaction_cost_bps)
+    args.slippage_bps = float(0.0 if args.slippage_bps is None else args.slippage_bps)
+    args.execution_price_model = args.execution_price_model or ("close_with_slippage" if args.slippage_bps > 0 else "close_to_close")
+    args.min_amount_mean_20 = float(0.0 if args.min_amount_mean_20 is None else args.min_amount_mean_20)
     args.score_col = args.score_col or "pred"
     args.return_col = args.return_col or "label_1d"
     args.feature_set = args.feature_set or "risk_default"
+    use_trade_constraints = bool(args.trade_constraints_path) and not args.no_trade_constraints
+    risk_control_overrides = {
+        "apply_market_stress_deleveraging": bool(args.market_stress_deleveraging),
+        "apply_drawdown_control": bool(args.drawdown_control),
+    }
+    for arg_name, cfg_name in [
+        ("market_window", "market_window"),
+        ("market_stress_threshold", "market_stress_threshold"),
+        ("market_stress_lag", "market_stress_lag"),
+        ("stress_gross_exposure", "stress_gross_exposure"),
+        ("drawdown_warning_threshold", "drawdown_warning_threshold"),
+        ("drawdown_warning_exposure", "drawdown_warning_exposure"),
+        ("drawdown_cut_threshold", "drawdown_cut_threshold"),
+        ("drawdown_cut_exposure", "drawdown_cut_exposure"),
+        ("drawdown_stop_threshold", "drawdown_stop_threshold"),
+        ("drawdown_stop_exposure", "drawdown_stop_exposure"),
+    ]:
+        value = getattr(args, arg_name)
+        if value is not None:
+            risk_control_overrides[cfg_name] = value
 
     try:
         registry = load_model_registry(args.model_registry)
@@ -245,6 +321,23 @@ def run_cli() -> None:
         registry_paths=[args.model_registry, args.strategy_registry],
     )
     grid = build_strategy_grid(cost_bps=args.transaction_cost_bps)
+    if use_trade_constraints or args.slippage_bps or args.execution_price_model != "close_to_close":
+        grid = build_strategy_grid(
+            cost_bps=args.transaction_cost_bps,
+            slippage_bps=args.slippage_bps,
+            execution_price_model=args.execution_price_model,
+            enforce_buy_constraints=use_trade_constraints,
+            config_overrides=risk_control_overrides,
+        )
+    elif risk_control_overrides:
+        grid = build_strategy_grid(cost_bps=args.transaction_cost_bps, config_overrides=risk_control_overrides)
+    if args.strategies:
+        selected = set(str(name) for name in args.strategies)
+        known = {name for name, _ in grid}
+        unknown = sorted(selected - known)
+        if unknown:
+            parser.error("unknown --strategies value(s): " + ", ".join(unknown) + "; known strategies: " + ", ".join(sorted(known)))
+        grid = [(name, cfg) for name, cfg in grid if name in selected]
     summary: dict[str, Any] = {
         "out_root": str(out_root),
         "out_parent": args.out_root,
@@ -252,6 +345,16 @@ def run_cli() -> None:
         "timestamped": not args.no_timestamp,
         "model_registry": args.model_registry,
         "transaction_cost_bps": float(args.transaction_cost_bps),
+        "slippage_bps": float(args.slippage_bps),
+        "total_cost_bps": float(args.transaction_cost_bps + args.slippage_bps),
+        "execution_price_model": args.execution_price_model,
+        "trade_constraints": {
+            "enabled": use_trade_constraints,
+            "path": args.trade_constraints_path,
+            "min_amount_mean_20": float(args.min_amount_mean_20),
+        },
+        "risk_controls": risk_control_overrides,
+        "strategies": [name for name, _ in grid],
         "score_col": args.score_col,
         "return_col": args.return_col,
         "feature_set": None if args.no_feature_merge else args.feature_set,
@@ -268,6 +371,7 @@ def run_cli() -> None:
     aggregate_rows_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in args.splits}
     aggregate_curves_by_split: dict[str, dict[str, pd.DataFrame]] = {split: {} for split in args.splits}
     aggregate_benchmarks_seen: dict[str, set[str]] = {split: set() for split in args.splits}
+    constraint_rows: list[dict[str, Any]] = []
     benchmark_notes: list[str] = []
     if args.benchmark_path:
         benchmark_notes.append(f"external benchmark `{args.benchmark_name}` from `{args.benchmark_path}`")
@@ -279,6 +383,8 @@ def run_cli() -> None:
         benchmark_notes.append(f"index weight benchmark skipped because `{args.index_weight_path}` does not exist")
     if not args.no_equal_weight_benchmark:
         benchmark_notes.append("equal-weight universe baseline from prediction file")
+    if use_trade_constraints:
+        benchmark_notes.append(f"buy constraints from `{args.trade_constraints_path}`")
     benchmark_note = "; ".join(benchmark_notes) if benchmark_notes else "none"
 
     for model_name in args.models:
@@ -289,6 +395,14 @@ def run_cli() -> None:
             df = load_prediction_data(pred_path, score_col=args.score_col, return_col=args.return_col)
             if not args.no_feature_merge:
                 df = merge_feature_columns(df, feature_path, feature_columns)
+            constraint_stats: dict[str, object] | None = None
+            if use_trade_constraints:
+                df, constraint_stats = merge_trade_constraint_columns(
+                    df,
+                    args.trade_constraints_path,
+                    min_amount_mean_20=args.min_amount_mean_20,
+                )
+                constraint_rows.append({"model": model_name, "split": split, **constraint_stats})
             split_rows: list[dict[str, Any]] = []
             curves: dict[str, pd.DataFrame] = {}
             benchmark_rows: list[dict[str, Any]] = []
@@ -342,7 +456,14 @@ def run_cli() -> None:
                     aggregate_curves_by_split[split]["benchmark_equal_weight_universe"] = benchmark["curve"]
                     aggregate_benchmarks_seen[split].add("benchmark_equal_weight_universe")
             for exp_name, cfg in grid:
-                cfg = cfg.__class__(**{**cfg.__dict__, "score_col": args.score_col, "return_col": args.return_col})
+                cfg = cfg.__class__(
+                    **{
+                        **cfg.__dict__,
+                        "score_col": args.score_col,
+                        "return_col": args.return_col,
+                        "enforce_buy_constraints": use_trade_constraints,
+                    }
+                )
                 result = run_strategy(df, cfg, name=exp_name)
                 exp_dir = out_root / model_name / split / exp_name
                 write_strategy_outputs(result, exp_dir)
@@ -380,6 +501,7 @@ def run_cli() -> None:
                 "rows": int(len(df)),
                 "metrics_csv": str(split_dir / "strategy_metrics.csv"),
                 "plots": plot_paths,
+                "trade_constraints": constraint_stats,
                 "best_by_valid_protocol": _select_best(split_rows) if split == "valid" else None,
             }
 
@@ -411,6 +533,10 @@ def run_cli() -> None:
         benchmark_note=benchmark_note,
         title=args.run_name,
     )
+    if constraint_rows:
+        constraint_path = out_root / "trade_constraint_summary.csv"
+        pd.DataFrame(constraint_rows).to_csv(constraint_path, index=False)
+        summary["trade_constraint_summary_csv"] = str(constraint_path)
 
     with (out_root / "summary.json").open("w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)

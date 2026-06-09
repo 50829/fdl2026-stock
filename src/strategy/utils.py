@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 
@@ -40,3 +42,16 @@ def top_codes(day: pd.DataFrame, n: int, exclude: set[str] | None = None) -> lis
 def drop_missing(holdings: dict[str, int], day: pd.DataFrame) -> dict[str, int]:
     available = set(str(c) for c in day.index)
     return {c: age for c, age in holdings.items() if c in available}
+
+
+def buyable_mask(day: pd.DataFrame, cfg: Any) -> pd.Series:
+    if not bool(getattr(cfg, "enforce_buy_constraints", False)):
+        return pd.Series(True, index=day.index)
+    col = str(getattr(cfg, "buyable_col", "is_buyable"))
+    if col not in day.columns:
+        raise ValueError(f"buy constraint column `{col}` is missing from strategy input")
+    return day[col].fillna(False).astype(bool)
+
+
+def buyable_day(day: pd.DataFrame, cfg: Any) -> pd.DataFrame:
+    return day[buyable_mask(day, cfg)]

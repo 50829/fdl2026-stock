@@ -5,7 +5,7 @@ from typing import Any
 import pandas as pd
 
 from ..config import StrategyBacktestConfig
-from ..utils import drop_missing
+from ..utils import buyable_mask, drop_missing
 
 
 SIZE_COL = "log_total_mv__cs_rank"
@@ -78,7 +78,7 @@ def defensive_rank_buffer(
     for code, _ in sells:
         next_holdings.pop(code, None)
 
-    eligible_day = day[eligible].sort_values(cfg.score_col, ascending=False, kind="mergesort")
+    eligible_day = day[eligible & buyable_mask(day, cfg)].sort_values(cfg.score_col, ascending=False, kind="mergesort")
     strict_buy_pool = eligible_day[eligible_day["rank"] <= cfg.buy_rank]
     buy_pool = [str(c) for c in strict_buy_pool.index if str(c) not in next_holdings]
     if not current:

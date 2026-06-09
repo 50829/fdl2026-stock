@@ -6,7 +6,7 @@ import pandas as pd
 
 from ..config import StrategyBacktestConfig
 from ..risk import risk_score_from_history
-from ..utils import drop_missing, score_weights
+from ..utils import buyable_day, drop_missing, score_weights
 
 
 def risk_balanced_tail(
@@ -17,17 +17,18 @@ def risk_balanced_tail(
     cfg: StrategyBacktestConfig,
 ) -> tuple[dict[str, int], dict[str, float], list[dict[str, Any]]]:
     score = day[cfg.score_col].astype(float)
-    core = [str(c) for c in score.sort_values(ascending=False).head(cfg.core_count).index]
-    candidates = [str(c) for c in score.sort_values(ascending=False).index if str(c) not in set(core)]
+    buy_score = buyable_day(day, cfg)[cfg.score_col].astype(float)
+    core = [str(c) for c in buy_score.sort_values(ascending=False).head(cfg.core_count).index]
+    candidates = [str(c) for c in buy_score.sort_values(ascending=False).index if str(c) not in set(core)]
     candidate_pool = candidates[: max(cfg.tail_risk_candidates, cfg.tail_count)]
     risk = risk_score_from_history(ret_panel, date, core, candidate_pool, cfg)
     low_risk_pool = list(risk.sort_values(ascending=True).head(min(cfg.tail_risk_candidates, len(risk))).index)
-    tail = [str(c) for c in score.reindex(low_risk_pool).sort_values(ascending=False).head(cfg.tail_count).index]
+    tail = [str(c) for c in buy_score.reindex(low_risk_pool).sort_values(ascending=False).head(cfg.tail_count).index]
     target_codes = core + tail
     current = drop_missing(holdings, day)
     current_codes = set(current)
     target_set = set(target_codes)
-    additions = [str(c) for c in score.reindex(list(target_set - current_codes)).sort_values(ascending=False).index]
+    additions = [str(c) for c in buy_score.reindex(list(target_set - current_codes)).sort_values(ascending=False).index]
     removals = [str(c) for c in score.reindex(list(current_codes - target_set)).sort_values(ascending=True).index]
     if current:
         sell_count = min(cfg.max_stock_updates, len(removals))
