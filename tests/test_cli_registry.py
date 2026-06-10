@@ -16,6 +16,7 @@ def test_new_canonical_commands_are_registered() -> None:
         "live-rank",
         "label1d-window-ablation",
         "label1d-window-walkforward",
+        "plot-label1d-window-walkforward",
         "normalize-outputs",
     ]:
         assert name in COMMANDS
@@ -34,6 +35,7 @@ def test_registered_commands_expose_run_cli() -> None:
         "live-rank",
         "label1d-window-ablation",
         "label1d-window-walkforward",
+        "plot-label1d-window-walkforward",
         "normalize-outputs",
     ]:
         module = importlib.import_module(COMMANDS[name].module)

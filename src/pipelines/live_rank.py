@@ -317,6 +317,8 @@ def resolve_live_artifacts(registry_path: str | Path, artifact_name: str) -> dic
 
 def run(args: argparse.Namespace) -> None:
     config = load_config(Path(args.config))
+    if args.disable_liquidity_filter:
+        config.setdefault("universe", {}).setdefault("liquidity_filter", {})["enabled"] = False
     raw_dir = Path(config["data"]["raw_dir"])
     processed_dir = Path(config["data"]["processed_dir"])
     out_dir = Path(args.out_dir)
@@ -392,6 +394,7 @@ def run(args: argparse.Namespace) -> None:
         "xgb_model": xgb_model_path,
         "fusion_model": fusion_model_path,
         "candidate_count": int(len(scored)),
+        "liquidity_filter_enabled": bool(config.get("universe", {}).get("liquidity_filter", {}).get("enabled", True)),
         "raw_feature_dates": feature_dates,
         "top10_csv": str(out_dir / f"top10_{args.decision_date}_for_{trade_date}.csv"),
         "mentioned_csv": str(out_dir / f"mentioned_stock_ranks_{trade_date}.csv"),
@@ -431,6 +434,7 @@ def run_cli() -> None:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--watchlist", default=None, help="Optional CSV with stock_name/name and ts_code columns.")
     parser.add_argument("--model-name", default="final = lightgbm_top40 + 1.5 * residual_rank_mlp")
+    parser.add_argument("--disable-liquidity-filter", action="store_true", help="Diagnostic mode: keep the base universe but disable the liquidity bottom-percent filter.")
     args = parser.parse_args()
     if args.model_registry and args.artifact_registry == DEFAULT_ARTIFACT_REGISTRY:
         args.artifact_registry = args.model_registry

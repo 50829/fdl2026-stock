@@ -34,6 +34,7 @@ COMMANDS: dict[str, Command] = {
     "live-rank": Command("src.pipelines.live_rank", "Generate a live ranking file for one decision date."),
     "label1d-window-ablation": Command("src.pipelines.run_label1d_window_ablation", "Run label1d LightGBM feature-window ablations."),
     "label1d-window-walkforward": Command("src.pipelines.run_label1d_window_walkforward", "Run label1d expanding walk-forward checks for window ablations."),
+    "plot-label1d-window-walkforward": Command("src.pipelines.plot_label1d_window_walkforward", "Plot label1d expanding walk-forward equity curves."),
     "normalize-outputs": Command("src.pipelines.normalize_outputs", "Normalize local output directory names."),
 }
 

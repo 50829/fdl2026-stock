@@ -268,3 +268,72 @@ python -m src.experiments label1d-window-walkforward
 ```text
 tests/test_cli_registry.py 已通过。
 ```
+
+## 11. 收益曲线图
+
+本次又补充生成了 walk-forward 收益曲线图。
+
+生成命令：
+
+```bash
+conda run -n fdl python -m src.experiments plot-label1d-window-walkforward \
+  --walkforward-dir outputs/models/20260609_172836__label1d_window_walkforward \
+  --model lightgbm \
+  --variants all_windows no_20d short_5_10 \
+  --valid-years 2021 2022 2023 2024 2025 2026 \
+  --return-col label_1d \
+  --topk 20 \
+  --topk-drops 3 5 \
+  --transaction-cost-bps 5.0
+```
+
+图表文件：
+
+```text
+outputs/models/20260609_172836__label1d_window_walkforward/plots/walkforward_oos_topk20_drop3.svg
+outputs/models/20260609_172836__label1d_window_walkforward/plots/walkforward_oos_topk20_drop5.svg
+outputs/models/20260609_172836__label1d_window_walkforward/plots/yearly_topk20_drop3.svg
+outputs/models/20260609_172836__label1d_window_walkforward/plots/yearly_topk20_drop5.svg
+```
+
+曲线数据：
+
+```text
+outputs/models/20260609_172836__label1d_window_walkforward/walkforward_topk_curve_long.parquet
+outputs/models/20260609_172836__label1d_window_walkforward/walkforward_oos_curve_metrics.csv
+outputs/models/20260609_172836__label1d_window_walkforward/walkforward_curve_plot_summary.json
+```
+
+拼接 OOS 曲线指标：
+
+| 变体 | drop | 最终净值 | 总收益 | 年化收益 | Sharpe | 最大回撤 | 平均换手 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `all_windows` | 3 | 491.814241 | 490.814241 | 2.349857 | 4.376966 | -0.363095 | 0.486920 |
+| `no_20d` | 3 | 731.662018 | 730.662018 | 2.619708 | 4.569632 | -0.380443 | 0.510062 |
+| `short_5_10` | 3 | 1687.024719 | 1686.024719 | 3.260284 | 4.987582 | -0.406990 | 0.532508 |
+| `all_windows` | 5 | 1112.284450 | 1111.284450 | 2.927838 | 4.772723 | -0.390110 | 0.732817 |
+| `no_20d` | 5 | 1460.406636 | 1459.406636 | 3.142088 | 4.946163 | -0.395946 | 0.766486 |
+| `short_5_10` | 5 | 2075.676898 | 2074.676898 | 3.436088 | 5.022582 | -0.409675 | 0.787771 |
+
+读图原则：
+
+```text
+walkforward_oos_*：看跨年份拼接后的真实外推路径，上半部分是净值，下半部分是回撤。
+yearly_*：看每一年内部的路径差异，用来定位某个方案在哪一年突然变差。
+```
+
+从曲线指标看：
+
+```text
+short_5_10 的收益和 Sharpe 最高。
+short_5_10 的最大回撤也最深，drop3 回撤约 -40.70%，drop5 回撤约 -40.97%。
+all_windows 的回撤相对更浅，但收益也更低。
+no_20d 位于两者之间。
+```
+
+因此收益曲线进一步支持前面的判断：
+
+```text
+不能只按收益最高选择 short_5_10。
+如果要实盘使用，需要先叠加市场压力降仓、组合回撤控制和换手成本约束。
+```
