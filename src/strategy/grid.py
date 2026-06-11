@@ -28,7 +28,7 @@ def build_strategy_grid(
         rows.append((f"rolling_p{target}_h{hold}", cfg))
 
     base = StrategyBacktestConfig(strategy="topk_drop", **base_kwargs)
-    for topk, drop in [(20, 1), (20, 2), (20, 3), (20, 5), (30, 3)]:
+    for topk, drop in [(10, 2), (20, 1), (20, 2), (20, 3), (20, 5), (30, 3)]:
         rows.append((f"topk{topk}_drop{drop}", replace(base, topk=topk, drop=drop)))
 
     base = StrategyBacktestConfig(strategy="rank_buffer", **base_kwargs)

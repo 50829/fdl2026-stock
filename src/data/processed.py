@@ -430,6 +430,8 @@ def _iter_cached_sequence_labeled_feature_batches(
     batch_size: int,
     filter_in_universe: bool,
     return_keys: bool,
+    use_tqdm: bool = False,
+    stage_desc: str = "seq_labeled",
 ) -> Iterator[dict[str, object]]:
     try:
         import pandas as pd
@@ -484,6 +486,7 @@ def _iter_cached_sequence_labeled_feature_batches(
     trade_dates = sorted(features[key_trade].unique().tolist())
     date_to_idx = {d: i for i, d in enumerate(trade_dates)}
     emit_idx = date_to_idx.get(emit_start_date, 0)
+    tqdm_mod = _get_tqdm(use_tqdm)
 
     X_buf: list[np.ndarray] = []
     y_buf: list[np.ndarray] = []
@@ -537,7 +540,10 @@ def _iter_cached_sequence_labeled_feature_batches(
         return zip(starts, ends)
 
     features = features.sort_values([key_code, key_trade], kind="mergesort")
-    for code, stock in features.groupby(key_code, sort=True):
+    groups = features.groupby(key_code, sort=True)
+    if tqdm_mod is not None:
+        groups = tqdm_mod(groups, desc=f"{stage_desc}:stocks", total=int(features[key_code].nunique()))
+    for code, stock in groups:
         stock = stock.sort_values(key_trade, kind="mergesort")
         idx = stock[key_trade].map(date_to_idx).to_numpy(dtype=np.int32, copy=False)
         X_stock = stock[feature_cols].to_numpy(dtype=np.float32, copy=False)
@@ -959,7 +965,7 @@ def iter_processed_sequence_labeled_feature_batches(
     stage_desc: str = "seq_labeled",
     cache_in_memory: bool = False,
 ) -> Iterator[dict[str, object]]:
-    del use_tqdm, stage_desc, cache_in_memory
+    del cache_in_memory
     yield from _iter_cached_sequence_labeled_feature_batches(
         cfg,
         start_date,
@@ -971,4 +977,6 @@ def iter_processed_sequence_labeled_feature_batches(
         batch_size,
         filter_in_universe,
         return_keys,
+        use_tqdm=use_tqdm,
+        stage_desc=stage_desc,
     )

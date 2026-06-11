@@ -41,6 +41,76 @@ def _pwrite(tqdm_mod, msg: str):
         print(msg)
 
 
+def _write_train_history(out_dir: Path, history: list[dict], best_epoch: int, best_loss: float) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"history": history, "best_epoch": int(best_epoch), "best_valid_loss": float(best_loss)}
+    (out_dir / "train_history.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    csv_lines = ["epoch,epochs,train_loss,val_loss,sec"]
+    for row in history:
+        csv_lines.append(
+            ",".join(
+                [
+                    str(row.get("epoch", "")),
+                    str(row.get("epochs", "")),
+                    str(row.get("train_loss", "")),
+                    str(row.get("val_loss", "")),
+                    str(row.get("sec", "")),
+                ]
+            )
+        )
+    (out_dir / "train_history.csv").write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
+
+    try:
+        import matplotlib.pyplot as plt
+
+        epochs = [int(row["epoch"]) for row in history]
+        train_loss = [float(row["train_loss"]) for row in history]
+        val_loss = [float(row["val_loss"]) for row in history]
+        fig, ax = plt.subplots(figsize=(7.5, 4.2))
+        ax.plot(epochs, train_loss, color="#2563eb", marker="o", linewidth=2, label="train loss")
+        ax.plot(epochs, val_loss, color="#f97316", marker="s", linewidth=2, label="valid loss")
+        if epochs:
+            ax.annotate(
+                "train",
+                xy=(epochs[-1], train_loss[-1]),
+                xytext=(8, 0),
+                textcoords="offset points",
+                color="#2563eb",
+                va="center",
+                fontsize=9,
+            )
+            ax.annotate(
+                "valid",
+                xy=(epochs[-1], val_loss[-1]),
+                xytext=(8, 0),
+                textcoords="offset points",
+                color="#f97316",
+                va="center",
+                fontsize=9,
+            )
+        if best_epoch > 0 and np.isfinite(best_loss):
+            ax.axvline(best_epoch, color="#6b7280", linewidth=1, alpha=0.45)
+            ax.annotate(
+                f"best valid epoch {best_epoch}",
+                xy=(best_epoch, best_loss),
+                xytext=(8, 10),
+                textcoords="offset points",
+                color="#374151",
+                fontsize=8,
+            )
+        ax.set_xlabel("epoch")
+        ax.set_ylabel("MSE loss")
+        ax.set_title("Training Loss")
+        ax.grid(True, alpha=0.25)
+        ax.legend(frameon=False, loc="best")
+        fig.tight_layout()
+        fig.savefig(out_dir / "train_history.svg")
+        plt.close(fig)
+    except Exception:
+        pass
+
+
 def set_seed(seed: int):
     seed = int(seed)
     np.random.seed(seed)
@@ -256,11 +326,25 @@ def train(cfg: dict):
             _pwrite(tqdm_mod, json.dumps({"saved_best": str(save_path), "best_epoch": best_epoch, "best_valid_loss": best_loss}, ensure_ascii=False))
         else:
             bad_epochs += 1
+        _write_train_history(save_path.parent, history, best_epoch, best_loss)
+        torch.save(
+            {
+                "feature_cols": feature_cols,
+                "label_col": label_col,
+                "cfg": cfg,
+                "best_epoch": best_epoch,
+                "best_valid_loss": best_loss,
+                "history": history,
+            },
+            save_path.parent / "last_history.pt",
+        )
+        if not (va_loss < best_loss - min_delta):
             if patience is not None and bad_epochs >= patience:
                 _pwrite(tqdm_mod, json.dumps({"early_stop": True, "epoch": epoch, "best_epoch": best_epoch}, ensure_ascii=False))
                 break
 
     _pwrite(tqdm_mod, json.dumps({"saved": str(save_path), "best_epoch": best_epoch, "best_valid_loss": best_loss}, ensure_ascii=False))
+    _write_train_history(save_path.parent, history, best_epoch, best_loss)
 
 
 def run_cli() -> None:

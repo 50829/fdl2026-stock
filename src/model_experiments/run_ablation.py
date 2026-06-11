@@ -241,6 +241,7 @@ def train_one(cfg: dict, out_dir: Path) -> dict:
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     filter_in_universe = bool(train_cfg.get("filter_in_universe", True))
     cache_data = bool(train_cfg.get("cache_data", True))
+    use_tqdm = bool(train_cfg.get("use_tqdm", False))
     seq_len = int(cfg["model"].get("seq_len", 60))
 
     best_loss = float("inf")
@@ -266,6 +267,8 @@ def train_one(cfg: dict, out_dir: Path) -> dict:
             batch_size=batch_size,
             filter_in_universe=filter_in_universe,
             return_keys=False,
+            use_tqdm=use_tqdm,
+            stage_desc=f"{out_dir.name}:train",
             cache_in_memory=cache_data,
         )
         for batch in train_iter:
@@ -296,6 +299,8 @@ def train_one(cfg: dict, out_dir: Path) -> dict:
             batch_size=batch_size,
             filter_in_universe=filter_in_universe,
             return_keys=False,
+            use_tqdm=use_tqdm,
+            stage_desc=f"{out_dir.name}:valid",
             cache_in_memory=cache_data,
         )
         with torch.no_grad():

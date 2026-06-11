@@ -1,0 +1,35 @@
+models:
+  mlp_label1d:
+    description: 报告主实验：label1d MLP。
+    predictions:
+      valid: outputs/models/20260611_000000__report_model_benchmark/mlp_label1d/valid/valid_pred.parquet
+      test: outputs/models/20260611_000000__report_model_benchmark/mlp_label1d/test/test_pred.parquet
+  gru_label1d:
+    description: 报告主实验：label1d GRU/ALSTM。
+    predictions:
+      valid: outputs/models/20260611_000000__report_model_benchmark/gru_label1d/valid/valid_pred.parquet
+      test: outputs/models/20260611_000000__report_model_benchmark/gru_label1d/test/test_pred.parquet
+  tcn_label1d:
+    description: 报告主实验：label1d TCN。
+    predictions:
+      valid: outputs/models/20260611_000000__report_model_benchmark/tcn_label1d/valid/valid_pred.parquet
+      test: outputs/models/20260611_000000__report_model_benchmark/tcn_label1d/test/test_pred.parquet
+  lgb_label1d:
+    description: 报告主实验：label1d LightGBM top40。
+    predictions:
+      valid: outputs/models/20260611_000000__report_model_benchmark/lightgbm/unused/lightgbm/valid/valid_pred.parquet
+      test: outputs/models/20260611_000000__report_model_benchmark/lightgbm/unused/lightgbm/test/test_pred.parquet
+  xgb_label1d:
+    description: 报告主实验：label1d XGBoost top40。
+    predictions:
+      valid: outputs/models/20260611_000000__report_model_benchmark/xgboost/unused/xgboost/valid/valid_pred.parquet
+      test: outputs/models/20260611_000000__report_model_benchmark/xgboost/unused/xgboost/test/test_pred.parquet
+
+feature_sets:
+  risk_default:
+    path: data/processed/features.parquet
+    columns:
+      - log_total_mv__cs_rank
+      - log_amount__cs_rank
+      - volatility_20__cs_rank
+      - turnover_rate__cs_rank

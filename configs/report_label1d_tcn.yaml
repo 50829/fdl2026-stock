@@ -1,0 +1,42 @@
+data:
+  processed_dir: data/processed
+
+task:
+  label: label_1d__cs_rank
+
+model:
+  name: tcn
+  seq_len: 60
+  channels: 64
+  levels: 4
+  kernel_size: 3
+  dropout: 0.2
+  use_attention: false
+
+train:
+  seed: 2026
+  batch_size: 4096
+  epochs: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  grad_clip: 3.0
+  filter_in_universe: true
+  cache_data: true
+  loss: smooth_l1
+  patience: 2
+  min_delta: 0.0
+  use_tqdm: true
+  save_path: outputs/models/20260611_000000__report_model_benchmark/tcn_label1d/best.pt
+
+predict:
+  ckpt: outputs/models/20260611_000000__report_model_benchmark/tcn_label1d/best.pt
+  batch_size: 4096
+  use_tqdm: true
+
+backtest:
+  mode: topk
+  return_col: label_1d
+  n_hold: 10
+  k_rotate: 2
+  step_days: 1
+  transaction_cost_bps: 5.0
