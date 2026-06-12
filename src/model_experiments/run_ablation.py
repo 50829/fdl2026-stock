@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 from torch import nn, optim
@@ -151,6 +152,35 @@ EXPERIMENTS = {
             "use_attention": False,
         }
     },
+    "patchtst_light_lb60": {
+        "model": {
+            "name": "patchtst",
+            "seq_len": 60,
+            "patch_len": 10,
+            "stride": 5,
+            "d_model": 64,
+            "nhead": 4,
+            "num_layers": 1,
+            "dropout": 0.1,
+            "pooling": "last",
+            "instance_norm": True,
+        },
+        "train": {"batch_size": 2048},
+        "predict": {"batch_size": 4096},
+    },
+    "itransformer_light_lb60": {
+        "model": {
+            "name": "itransformer",
+            "seq_len": 60,
+            "d_model": 32,
+            "nhead": 4,
+            "num_layers": 1,
+            "dropout": 0.1,
+            "instance_norm": True,
+        },
+        "train": {"batch_size": 1024},
+        "predict": {"batch_size": 2048},
+    },
 }
 
 
@@ -211,6 +241,91 @@ def compute_loss(pred: torch.Tensor, target: torch.Tensor, base_loss, train_cfg:
     if name in {"smooth_l1_corr", "huber_corr", "mse_corr", "l2_corr"}:
         loss = loss + float(train_cfg.get("corr_lambda", 0.05)) * pearson_corr_loss(pred, target)
     return loss
+
+
+def apply_runtime_options(cfg: dict, *, use_tqdm: bool | None = None) -> dict:
+    if use_tqdm is not None:
+        cfg.setdefault("train", {})["use_tqdm"] = bool(use_tqdm)
+        cfg.setdefault("predict", {})["use_tqdm"] = bool(use_tqdm)
+    return cfg
+
+
+def write_combined_loss_outputs(summaries: list[dict], out_root: Path) -> None:
+    rows = []
+    for summary in summaries:
+        model = str(summary.get("experiment", "model"))
+        for row in summary.get("train", {}).get("history", []):
+            rows.append(
+                {
+                    "model": model,
+                    "epoch": int(row["epoch"]),
+                    "train_loss": float(row["train_loss"]),
+                    "valid_loss": float(row["valid_loss"]),
+                    "sec": float(row.get("sec", 0.0)),
+                }
+            )
+    if not rows:
+        return
+
+    df = pd.DataFrame(rows).sort_values(["model", "epoch"])
+    csv_path = out_root / "training_loss.csv"
+    df.to_csv(csv_path, index=False)
+
+    import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+    from matplotlib.lines import Line2D
+
+    colors = ["#4e79a7", "#b07aa1", "#59a14f", "#9c755f", "#76b7b2", "#f28e2b"]
+    models = list(df["model"].drop_duplicates())
+    color_map = {model: colors[i % len(colors)] for i, model in enumerate(models)}
+    font_names = {font.name for font in font_manager.fontManager.ttflist}
+    cjk_candidates = [
+        "Noto Sans CJK SC",
+        "Noto Sans CJK JP",
+        "Source Han Sans SC",
+        "Microsoft YaHei",
+        "SimHei",
+        "WenQuanYi Micro Hei",
+    ]
+    cjk_font = next((name for name in cjk_candidates if name in font_names), None)
+    if cjk_font:
+        plt.rcParams["font.sans-serif"] = [cjk_font, "DejaVu Sans"]
+        title = "训练集与验证集损失曲线"
+        train_label = "训练损失"
+        valid_label = "验证损失"
+        model_title = "模型"
+        line_title = "线型"
+    else:
+        title = "Train and Validation Loss"
+        train_label = "Train loss"
+        valid_label = "Validation loss"
+        model_title = "Model"
+        line_title = "Line"
+
+    fig, ax = plt.subplots(figsize=(10.5, 5.8))
+    for model in models:
+        g = df[df["model"] == model].sort_values("epoch")
+        color = color_map[model]
+        ax.plot(g["epoch"], g["train_loss"], color=color, linestyle="-", marker="o", linewidth=2.2, markersize=4)
+        ax.plot(g["epoch"], g["valid_loss"], color=color, linestyle="--", marker="s", linewidth=2.2, markersize=4)
+
+    ax.set_title(title)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.grid(True, alpha=0.25)
+    ax.set_xticks(sorted(df["epoch"].unique()))
+    model_handles = [Line2D([0], [0], color=color_map[m], lw=2.5, label=m) for m in models]
+    split_handles = [
+        Line2D([0], [0], color="#111827", lw=2.5, linestyle="-", label=train_label),
+        Line2D([0], [0], color="#111827", lw=2.5, linestyle="--", label=valid_label),
+    ]
+    legend1 = ax.legend(handles=model_handles, title=model_title, loc="upper right", frameon=False)
+    ax.add_artist(legend1)
+    ax.legend(handles=split_handles, title=line_title, loc="lower left", frameon=False)
+    fig.tight_layout()
+    fig.savefig(out_root / "training_loss.svg")
+    fig.savefig(out_root / "training_loss.png", dpi=180)
+    plt.close(fig)
 
 
 def train_one(cfg: dict, out_dir: Path) -> dict:
@@ -350,12 +465,19 @@ def train_one(cfg: dict, out_dir: Path) -> dict:
     return {"best_path": str(best_path), "best_epoch": best_epoch, "best_valid_loss": best_loss, "history": history}
 
 
-def run_ablation(experiment: str, out_root: Path, processed_dir: str | None = None, epochs: int | None = None) -> dict:
+def run_ablation(
+    experiment: str,
+    out_root: Path,
+    processed_dir: str | None = None,
+    epochs: int | None = None,
+    use_tqdm: bool | None = None,
+) -> dict:
     cfg = deep_update(BASE_CFG, EXPERIMENTS[experiment])
     if processed_dir is not None:
         cfg["data"]["processed_dir"] = str(processed_dir)
     if epochs is not None:
         cfg["train"]["epochs"] = int(epochs)
+    apply_runtime_options(cfg, use_tqdm=use_tqdm)
     out_dir = out_root / experiment
     train_summary = train_one(cfg, out_dir)
     _, metrics = evaluate_split(cfg, "valid", out_dir / "valid", raw_return_col="label_5d")
@@ -372,6 +494,7 @@ def run_feature_list_ablation(
     out_root: Path,
     processed_dir: str | None = None,
     epochs: int | None = None,
+    use_tqdm: bool | None = None,
 ) -> dict:
     cfg = deep_update(BASE_CFG, EXPERIMENTS[base_experiment])
     columns = [line.strip() for line in Path(feature_list).read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -380,6 +503,7 @@ def run_feature_list_ablation(
         cfg["data"]["processed_dir"] = str(processed_dir)
     if epochs is not None:
         cfg["train"]["epochs"] = int(epochs)
+    apply_runtime_options(cfg, use_tqdm=use_tqdm)
     out_dir = out_root / custom_name
     train_summary = train_one(cfg, out_dir)
     eval_summary = {}
@@ -409,6 +533,7 @@ def run_cli() -> None:
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--feature-list", default=None)
     parser.add_argument("--custom-name", default=None)
+    parser.add_argument("--use-tqdm", action=argparse.BooleanOptionalAction, default=None)
     args = parser.parse_args()
 
     out_root = make_run_dir(args.out_root, args.run_name, timestamped=not args.no_timestamp)
@@ -424,10 +549,21 @@ def run_cli() -> None:
                 out_root,
                 processed_dir=args.processed_dir,
                 epochs=args.epochs,
+                use_tqdm=args.use_tqdm,
             )
         ]
     else:
-        summaries = [run_ablation(exp, out_root, processed_dir=args.processed_dir, epochs=args.epochs) for exp in args.experiments]
+        summaries = [
+            run_ablation(
+                exp,
+                out_root,
+                processed_dir=args.processed_dir,
+                epochs=args.epochs,
+                use_tqdm=args.use_tqdm,
+            )
+            for exp in args.experiments
+        ]
+    write_combined_loss_outputs(summaries, out_root)
     write_json(out_root / "summary.json", {"experiments": summaries})
 
 

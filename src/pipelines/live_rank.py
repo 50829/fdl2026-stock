@@ -351,6 +351,11 @@ def run(args: argparse.Namespace) -> None:
 
     fusion = load_residual_rank_fusion(fusion_model_path, alpha=args.alpha)
     scored = fusion.predict_frame(pred, device=args.device)
+    if args.score_mode == "rank_mean":
+        scored["final_pred"] = scored["rank_mean"].astype(np.float32)
+        scored["pred"] = scored["final_pred"].astype(np.float32)
+    elif args.score_mode != "residual_lgb":
+        raise ValueError(f"unknown score mode: {args.score_mode}")
     scored["model_rank"] = scored["final_pred"].rank(method="first", ascending=False).astype(int)
 
     decision_panel = panel[panel["trade_date"].astype(str) == args.decision_date][["trade_date", "ts_code", "close", "amount"]]
@@ -388,6 +393,7 @@ def run(args: argparse.Namespace) -> None:
         "decision_date": args.decision_date,
         "trade_date": trade_date,
         "model": args.model_name,
+        "score_mode": args.score_mode,
         "artifact_registry": args.artifact_registry,
         "artifact_name": args.artifact_name,
         "lgb_model": lgb_model_path,
@@ -431,6 +437,12 @@ def run_cli() -> None:
     parser.add_argument("--xgb-model", default=None, help="Override the XGBoost artifact from --artifact-name.")
     parser.add_argument("--fusion-model", default=None, help="Override the residual-rank fusion artifact from --artifact-name.")
     parser.add_argument("--alpha", type=float, default=1.5)
+    parser.add_argument(
+        "--score-mode",
+        choices=["residual_lgb", "rank_mean"],
+        default="residual_lgb",
+        help="residual_lgb uses pred_lgb + alpha * residual_rank_pred; rank_mean uses 0.5 * (rank_lgb + rank_xgb).",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--watchlist", default=None, help="Optional CSV with stock_name/name and ts_code columns.")
     parser.add_argument("--model-name", default="final = lightgbm_top40 + 1.5 * residual_rank_mlp")

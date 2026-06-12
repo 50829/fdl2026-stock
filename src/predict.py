@@ -99,7 +99,19 @@ def predict(cfg: dict):
 
     model_cfg = cfg.get("model", {})
     model_name = str(model_cfg.get("name", "mlp")).strip().lower()
-    is_sequence_model = model_name in {"lstm", "transformer", "tf", "alstm", "tcn", "temporal_conv", "temporal_convolution"}
+    is_sequence_model = model_name in {
+        "lstm",
+        "transformer",
+        "tf",
+        "alstm",
+        "tcn",
+        "temporal_conv",
+        "temporal_convolution",
+        "patchtst",
+        "patch_tst",
+        "itransformer",
+        "i_transformer",
+    }
     seq_len = int(model_cfg.get("seq_len", cfg.get("sample", {}).get("lookback", 60)))
     warmup_start = str(pred_cfg.get("warmup_start_date", start_date))
 

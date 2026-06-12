@@ -61,7 +61,19 @@ EXPERIMENTS = {
 
 def is_sequence_model(cfg: dict) -> bool:
     name = str(cfg.get("model", {}).get("name", "mlp")).strip().lower()
-    return name in {"lstm", "transformer", "tf", "alstm", "tcn", "temporal_conv", "temporal_convolution"}
+    return name in {
+        "lstm",
+        "transformer",
+        "tf",
+        "alstm",
+        "tcn",
+        "temporal_conv",
+        "temporal_convolution",
+        "patchtst",
+        "patch_tst",
+        "itransformer",
+        "i_transformer",
+    }
 
 
 def load_checkpoint_model(cfg: dict, ckpt_path: str | Path):

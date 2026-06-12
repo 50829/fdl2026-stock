@@ -65,6 +65,28 @@ def load_tabular_frame(
     return df.sort_values([key_trade, key_code], kind="mergesort").reset_index(drop=True)
 
 
+def training_sample_weights(df: pd.DataFrame, args: argparse.Namespace) -> np.ndarray | None:
+    mode = str(getattr(args, "sample_weight_mode", "uniform")).lower()
+    if mode in {"", "none", "uniform"}:
+        return None
+    if mode != "exp_decay":
+        raise ValueError(f"unsupported sample_weight_mode: {mode}")
+
+    half_life_days = float(getattr(args, "half_life_days", 0.0) or 0.0)
+    if half_life_days <= 0:
+        raise ValueError("--half-life-days must be positive when --sample-weight-mode=exp_decay")
+
+    dates = sorted(df["trade_date"].astype(str).unique().tolist())
+    date_idx = {d: i for i, d in enumerate(dates)}
+    max_idx = max(date_idx.values()) if date_idx else 0
+    age = df["trade_date"].astype(str).map(lambda d: max_idx - date_idx[str(d)]).to_numpy(dtype=np.float64)
+    weights = np.power(0.5, age / half_life_days).astype(np.float32, copy=False)
+    mean = float(weights.mean()) if len(weights) else 1.0
+    if mean > 0:
+        weights = weights / mean
+    return weights
+
+
 def train_lightgbm(
     train_df: pd.DataFrame,
     valid_df: pd.DataFrame,
@@ -100,7 +122,8 @@ def train_lightgbm(
     y_train = train_df[label_col].to_numpy(dtype=np.float32, copy=False)
     X_valid = valid_df[feature_cols].to_numpy(dtype=np.float32, copy=False)
     y_valid = valid_df[label_col].to_numpy(dtype=np.float32, copy=False)
-    train_set = lgb.Dataset(X_train, label=y_train, feature_name=feature_cols, free_raw_data=False)
+    train_weight = training_sample_weights(train_df, args)
+    train_set = lgb.Dataset(X_train, label=y_train, weight=train_weight, feature_name=feature_cols, free_raw_data=False)
     valid_set = lgb.Dataset(X_valid, label=y_valid, reference=train_set, feature_name=feature_cols, free_raw_data=False)
 
     callbacks = [lgb.log_evaluation(period=args.log_period)]
@@ -150,6 +173,7 @@ def train_xgboost(
     dtrain = xgb.DMatrix(
         train_df[feature_cols].to_numpy(dtype=np.float32, copy=False),
         label=train_df[label_col].to_numpy(dtype=np.float32, copy=False),
+        weight=training_sample_weights(train_df, args),
         feature_names=feature_cols,
     )
     dvalid = xgb.DMatrix(
@@ -281,6 +305,8 @@ def run(args: argparse.Namespace) -> dict:
         "train_rows": int(len(train_df)),
         "valid_rows": int(len(valid_df)),
         "train_sec": train_sec,
+        "sample_weight_mode": str(args.sample_weight_mode),
+        "half_life_days": float(args.half_life_days),
         "params": params,
         "splits": {k: [v.start_date, v.end_date] for k, v in splits.items()},
     }
@@ -326,6 +352,8 @@ def run_cli() -> None:
     parser.add_argument("--feature-list-artifact", default=None, help="Artifact key for a newline-delimited feature list.")
     parser.add_argument("--filter-in-universe", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-train-rows", type=int, default=0)
+    parser.add_argument("--sample-weight-mode", choices=["uniform", "exp_decay"], default="uniform")
+    parser.add_argument("--half-life-days", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--num-threads", type=int, default=8)
     parser.add_argument("--num-boost-round", type=int, default=1200)

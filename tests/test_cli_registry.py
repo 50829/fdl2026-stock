@@ -18,6 +18,10 @@ def test_new_canonical_commands_are_registered() -> None:
         "label1d-window-walkforward",
         "plot-label1d-window-walkforward",
         "normalize-outputs",
+        "report-fusion",
+        "nsntk-inspired",
+        "tree-residual-deep",
+        "oof-tree-residual-deep",
     ]:
         assert name in COMMANDS
 
@@ -37,6 +41,10 @@ def test_registered_commands_expose_run_cli() -> None:
         "label1d-window-walkforward",
         "plot-label1d-window-walkforward",
         "normalize-outputs",
+        "report-fusion",
+        "nsntk-inspired",
+        "tree-residual-deep",
+        "oof-tree-residual-deep",
     ]:
         module = importlib.import_module(COMMANDS[name].module)
         assert callable(getattr(module, "run_cli", None)), name

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from torch import nn
 
-from .sequence import ALSTM, TCNModel
+from .sequence import ALSTM, ITransformerModel, PatchTSTModel, TCNModel
 from .lstm import LSTMModel
 from .mlp import MLPModel
 from .transformer import TransformerModel
@@ -29,6 +29,31 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
         num_layers = int(model_cfg.get("num_layers", 2))
         dropout = float(model_cfg.get("dropout", 0.0))
         return TransformerModel(in_dim=in_dim, d_model=d_model, nhead=nhead, num_layers=num_layers, dropout=dropout)
+
+    if name in {"patchtst", "patch_tst"}:
+        return PatchTSTModel(
+            in_dim=in_dim,
+            seq_len=int(model_cfg.get("seq_len", 60)),
+            patch_len=int(model_cfg.get("patch_len", 10)),
+            stride=int(model_cfg.get("stride", 5)),
+            d_model=int(model_cfg.get("d_model", 64)),
+            nhead=int(model_cfg.get("nhead", 4)),
+            num_layers=int(model_cfg.get("num_layers", 1)),
+            dropout=float(model_cfg.get("dropout", 0.1)),
+            pooling=str(model_cfg.get("pooling", "last")),
+            instance_norm=bool(model_cfg.get("instance_norm", True)),
+        )
+
+    if name in {"itransformer", "i_transformer"}:
+        return ITransformerModel(
+            in_dim=in_dim,
+            seq_len=int(model_cfg.get("seq_len", 60)),
+            d_model=int(model_cfg.get("d_model", 32)),
+            nhead=int(model_cfg.get("nhead", 4)),
+            num_layers=int(model_cfg.get("num_layers", 1)),
+            dropout=float(model_cfg.get("dropout", 0.1)),
+            instance_norm=bool(model_cfg.get("instance_norm", True)),
+        )
 
     if name in {"alstm"}:
         input_dim = int(model_cfg.get("input_dim", in_dim))
@@ -76,4 +101,13 @@ def build_model(cfg: dict, in_dim: int) -> nn.Module:
     raise ValueError(f"Unknown model name: {name}")
 
 
-__all__ = ["build_model", "MLPModel", "LSTMModel", "TransformerModel", "ALSTM", "TCNModel"]
+__all__ = [
+    "build_model",
+    "MLPModel",
+    "LSTMModel",
+    "TransformerModel",
+    "ALSTM",
+    "ITransformerModel",
+    "PatchTSTModel",
+    "TCNModel",
+]
