@@ -1,0 +1,25 @@
+models:
+  label1d_lgb_xgb_rank:
+    description: 报告策略实验主模型：label1d LightGBM 与 XGBoost 横截面 rank_mean 融合。
+    predictions:
+      valid: outputs/models/20260612_151735__nsntk_inspired_label1d/main_model_stability/valid/valid_pred.parquet
+      test: outputs/models/20260612_151735__nsntk_inspired_label1d/main_model_stability/test/test_pred.parquet
+  label5d_lgb:
+    description: 报告策略实验对照：label5d LightGBM。
+    predictions:
+      valid: outputs/models/20260611_210718__report_label5d_lgb_top40_rerun/lightgbm/valid/valid_pred.parquet
+      test: outputs/models/20260611_210718__report_label5d_lgb_top40_rerun/lightgbm/test/test_pred.parquet
+  label5d_xgb:
+    description: 报告策略实验对照：label5d XGBoost。
+    predictions:
+      valid: outputs/models/20260611_210936__report_label5d_xgb_top40_rerun/xgboost/valid/valid_pred.parquet
+      test: outputs/models/20260611_210936__report_label5d_xgb_top40_rerun/xgboost/test/test_pred.parquet
+
+feature_sets:
+  risk_default:
+    path: data/processed/features.parquet
+    columns:
+      - log_total_mv__cs_rank
+      - log_amount__cs_rank
+      - volatility_20__cs_rank
+      - turnover_rate__cs_rank

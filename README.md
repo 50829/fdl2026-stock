@@ -149,6 +149,47 @@ python -m src.experiments live-rank --decision-date 20260603 --trade-date 202606
 
 可选 `--watchlist watchlist.csv`，文件包含 `ts_code` 和可选 `stock_name`/`name` 列。
 
+## 报告与最终实验
+
+正式报告草稿：
+
+- `docs/report/正式实验报告.md`
+- `docs/report/提交前检查清单.md`
+- `docs/report/作业要求梳理.md`
+
+最终报告表格：
+
+- `outputs/report_tables/20260613_105139__final_report_tables/最终主结果表.csv`
+- `outputs/report_tables/20260613_105139__final_report_tables/序列长度消融表.csv`
+- `outputs/report_tables/20260613_105139__final_report_tables/深度模型EMA与多种子表.csv`
+- `outputs/report_tables/20260613_105139__final_report_tables/GCN图实验表.csv`
+- `outputs/report_tables/20260613_164416__final_strategy_report_tables/策略主实验表.csv`
+- `outputs/report_tables/20260613_164416__final_strategy_report_tables/交易成本敏感性表.csv`
+- `outputs/report_tables/20260613_164416__final_strategy_report_tables/风控实验表.csv`
+- `outputs/report_tables/20260613_164416__final_strategy_report_tables/基准对比表.csv`
+
+最终报告图表：
+
+- `outputs/report_figures/20260613_095357__final_report_figures_with_seq_len/`
+- `outputs/report_figures/20260613_172822__final_strategy_curves/`
+
+复现最终图表和表格：
+
+```bash
+python -m src.experiments final-report-figures \
+  --run-name final_report_figures_with_seq_len \
+  --seq-len-run outputs/models/20260613_014931__seq_len_fusion_label1d
+
+python -m src.experiments final-strategy-curves \
+  --run-name final_strategy_curves
+
+python -m src.experiments final-report-tables \
+  --run-name final_report_tables
+
+python -m src.experiments final-strategy-report-tables \
+  --run-name final_strategy_report_tables
+```
+
 ## 输出目录命名
 
 新实验统一使用：
